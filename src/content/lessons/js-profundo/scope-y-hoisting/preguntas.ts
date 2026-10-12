@@ -42,7 +42,7 @@ greet();
     options: opts("Hola\nAna", "Hola\nLuis", "Hola\nundefined", "Hola\nUncaught ReferenceError"),
     correct: "d",
     explanation:
-      "El const user de dentro de greet pertenece a todo el cuerpo de la función, desde su primera línea: hace shadowing del user global en todo ese scope, no solo a partir de donde está escrito. Al llegar a console.log(user), la búsqueda encuentra el user local, que todavía está en la TDZ, y lanza ReferenceError (Cannot access 'user' before initialization). No \"cae\" al user global.",
+      "El const user de dentro de greet pertenece a todo el cuerpo de la función, desde su primera línea: hace shadowing del user del módulo en todo ese scope, no solo a partir de donde está escrito. Al llegar a console.log(user), la búsqueda encuentra el user local, que todavía está en la TDZ, y lanza ReferenceError (Cannot access 'user' before initialization). No \"cae\" al user del módulo.",
   },
   {
     id: "hoisting-var-y-function",

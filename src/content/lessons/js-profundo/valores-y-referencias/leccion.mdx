@@ -156,7 +156,7 @@ clone.when instanceof Date;  // true: copia Date, Map, Set, arrays, objetos plan
 Sus límites:
 
 - **No clona funciones** (ni objetos que las contengan como valor) ni nodos del DOM: lanza un `DOMException` llamado `DataCloneError`.
-- **No conserva prototipos**: una instancia de una clase propia vuelve como objeto plano, sin sus métodos. Tampoco copia getters/setters ni propiedades de símbolo.
+- **No conserva prototipos**: una instancia de una clase propia vuelve como objeto plano, sin sus métodos. Los getters se ejecutan y se copia su valor como propiedad normal (el getter/setter en sí se pierde), y se omiten las propiedades con clave de símbolo y las no enumerables.
 - Sí respeta referencias circulares y objetos repetidos.
 
 `JSON.parse(JSON.stringify(x))` es el truco antiguo y es peor: convierte `Date` en strings, pierde `undefined`, `Map` y `Set`, y falla con referencias circulares.

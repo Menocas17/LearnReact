@@ -147,7 +147,7 @@ Errores comunes:
 - Asumir que una arrow asignada a `const` se eleva como una function declaration.
 - Declarar con `var` dentro de un `if` o un `for` creyendo que la variable es local al bloque.
 - Usar `typeof x === "undefined"` como protección contra la TDZ: no protege, lanza igual.
-- Pensar que mover un `import` arriba o abajo dentro del archivo cambia algo: todos los `import` se procesan antes de ejecutar el módulo. Lo que cambia el resultado es **qué módulo se carga primero** en el ciclo.
+- Pensar que mover un `import` por debajo del código (o al revés) cambia algo: todos los `import` se procesan antes de ejecutar el cuerpo del módulo. Lo que sí cambia el resultado es el **orden de los `import` entre sí**, porque decide **qué módulo se carga primero** en el ciclo.
 </Callout>
 
 <Callout type="clave">

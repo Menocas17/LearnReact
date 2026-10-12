@@ -30,8 +30,8 @@ export const valoresYReferencias: LessonDef = {
     },
   ],
   sources: [
-    { title: "MDN: Estructuras de datos y tipos en JavaScript", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Data_structures" },
-    { title: "MDN: Comparaciones de igualdad e identidad", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Equality_comparisons_and_sameness" },
+    { title: "MDN: Estructuras de datos y tipos en JavaScript", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Guide/Data_structures" },
+    { title: "MDN: Comparaciones de igualdad e identidad", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Guide/Equality_comparisons_and_sameness" },
     { title: "MDN: Object.is()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/Object/is" },
     { title: "MDN: Copia superficial", url: "https://developer.mozilla.org/es/docs/Glossary/Shallow_copy" },
     { title: "MDN: Deep copy", url: "https://developer.mozilla.org/en-US/docs/Glossary/Deep_copy" },

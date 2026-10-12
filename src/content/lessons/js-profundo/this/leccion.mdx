@@ -131,7 +131,7 @@ f("!");                                // "Hola, soy Ana!"
 
 ## this en listeners del DOM
 
-`addEventListener` llama a un listener declarado con `function` con `this` igual al elemento donde **registraste** el listener, que es `event.currentTarget`. No es `event.target`, que es el elemento exacto donde ocurrió el evento (puede ser un hijo):
+`addEventListener` llama a un listener declarado con `function` (no a uno que sea un objeto con `handleEvent`) con `this` igual al elemento donde **registraste** el listener, que es `event.currentTarget`. No es `event.target`, que es el elemento exacto donde ocurrió el evento (puede ser un hijo):
 
 <Pregunta id="this-listener-currenttarget" />
 
@@ -144,7 +144,7 @@ En la tabla aparecían dos valores para la llamada simple. Depende del **modo** 
 - **Modo no estricto** (*sloppy*): es el modo por defecto de un `<script>` clásico o de un archivo CommonJS sin `"use strict"`. En una llamada simple, un `this` `undefined` o `null` se sustituye por el objeto global (`globalThis`, que en el navegador es `window`).
 - **Modo estricto**: `this` es exactamente lo que se pasó; en una llamada simple, `undefined`.
 
-Se activa con la directiva `"use strict"` al principio del archivo o de una función, pero sobre todo **es automático en dos sitios**: los **módulos ES** (todo archivo con `import`/`export`, lo que usas en Vite, Next y cualquier proyecto moderno) y los **cuerpos de clase**. Por eso en tu código casi siempre verás `undefined`, y por eso el error es "Cannot read properties of undefined" en vez de leer algo raro de `window` en silencio.
+Se activa con la directiva `"use strict"` al principio del archivo o de una función, pero sobre todo **es automático en dos sitios**: los **módulos ES** (todo archivo cargado como módulo: `<script type="module">`, `.mjs`, o cualquier archivo de un proyecto con Vite, Next u otro bundler moderno) y los **cuerpos de clase**. Por eso en tu código casi siempre verás `undefined`, y por eso el error es "Cannot read properties of undefined" en vez de leer algo raro de `window` en silencio.
 
 <Pregunta id="this-script-vs-modulo" />
 
