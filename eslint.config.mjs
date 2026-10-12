@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Carpeta temporal del validador de contenido.
+    ".validate-tmp/**",
+    // Datos locales y resultados de Playwright.
+    ".data/**",
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);
 

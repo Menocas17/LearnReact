@@ -1,0 +1,269 @@
+## El problema
+
+Tienes una lista de pedidos y otra de usuarios, y cada fila muestra el nombre del autor:
+
+```jsx
+function OrderList({ orders, users }) {
+  return (
+    <ul>
+      {orders.map((order) => {
+        const user = users.find((u) => u.id === order.userId);
+        return <li key={order.id}>{user.name}: {order.total}</li>;
+      })}
+    </ul>
+  );
+}
+```
+
+Con 20 pedidos y 10 usuarios va bien. Con 5.000 pedidos y 2.000 usuarios, cada render hace hasta **10 millones** de comparaciones: por cada pedido, `find` recorre los usuarios desde el principio. Es un coste O(n·m), y lo pagas en cada render.
+
+La solución es construir un **diccionario** una sola vez y buscar en él:
+
+```jsx
+const usersById = new Map(users.map((u) => [u.id, u]));
+// ...
+const user = usersById.get(order.userId); // búsqueda directa, sin recorrer
+```
+
+Ahora el coste es O(n + m). Para hacer esto bien necesitas conocer las herramientas que JavaScript te da para guardar y recorrer datos: los objetos a fondo, `Map` y `Set`, y el protocolo de iteración que los une.
+
+## Objetos como datos: keys, values, entries
+
+Un objeto no tiene `map` ni `filter`, pero puedes convertirlo en array y volver:
+
+```js
+const prices = { pan: 1.2, leche: 0.9, cafe: 4.5 };
+
+Object.keys(prices);    // ["pan", "leche", "cafe"]
+Object.values(prices);  // [1.2, 0.9, 4.5]
+Object.entries(prices); // [["pan", 1.2], ["leche", 0.9], ["cafe", 4.5]]
+
+// Transformar un objeto: entries → map/filter → fromEntries
+const caros = Object.fromEntries(
+  Object.entries(prices).filter(([, price]) => price > 1),
+); // { pan: 1.2, cafe: 4.5 }
+```
+
+`Object.fromEntries` acepta cualquier iterable de pares `[clave, valor]`, incluido un `Map`. Estos métodos solo ven las propiedades **propias** y **enumerables** del objeto (ahora verás qué significa eso).
+
+### El orden de las claves
+
+Los objetos sí tienen un orden definido, pero no siempre el de inserción: las claves que son **índices enteros** (`"0"`, `"7"`, `"10"`) van primero, en orden numérico, y después el resto de strings en el orden en que se añadieron.
+
+<Pregunta id="objetos-transformar-orden" />
+
+Por eso, si los ids de tu API son números y te importa el orden, no confíes en `Object.keys(byId)`: guarda el orden aparte en un array.
+
+### Claves computadas
+
+Puedes calcular el nombre de una propiedad al crear el objeto, con corchetes:
+
+```js
+const field = "email";
+const errors = { [field]: "Obligatorio", [`${field}Confirm`]: "No coincide" };
+// { email: "Obligatorio", emailConfirm: "No coincide" }
+```
+
+Lo usas constantemente en React para actualizar un campo de formulario: `setForm({ ...form, [e.target.name]: e.target.value })`.
+
+## Getters y setters
+
+Una propiedad puede ser una función disfrazada: se lee y se asigna como un valor normal, pero ejecuta código.
+
+```js
+const user = {
+  first: "Ana",
+  last: "Gómez",
+  get fullName() {
+    return this.first + " " + this.last;
+  },
+  set fullName(value) {
+    [this.first, this.last] = value.split(" ");
+  },
+};
+
+user.fullName;              // "Ana Gómez" (sin paréntesis)
+user.fullName = "Eva Ruiz"; // llama al setter
+user.first;                 // "Eva"
+```
+
+El detalle importante: el getter **no guarda** el resultado.
+
+<Pregunta id="objetos-getter-cada-acceso" />
+
+## Descriptores: lo que hay detrás de cada propiedad
+
+Cada propiedad tiene, además de su valor, unos atributos (su **descriptor**). Los dos que más vas a notar:
+
+- `writable`: si se puede reasignar. Si es `false`, la asignación se ignora (y en modo estricto, como en los módulos, lanza `TypeError`).
+- `enumerable`: si aparece en `Object.keys`, `for...in`, el spread y `JSON.stringify`.
+
+Las propiedades que creas con un literal o una asignación tienen todo a `true`. Con `Object.defineProperty` eliges tú, y lo que no indicas queda a `false`:
+
+```js
+const config = {};
+Object.defineProperty(config, "version", { value: 2, writable: false, enumerable: true });
+Object.getOwnPropertyDescriptor(config, "version");
+// { value: 2, writable: false, enumerable: true, configurable: false }
+```
+
+No lo usarás a diario, pero explica cosas que sí ves: por qué los métodos de los arrays no salen en un `for...in` (no son enumerables) o cómo `Object.freeze` marca todas las propiedades como no escribibles.
+
+### `in` vs `Object.hasOwn`
+
+`"x" in obj` pregunta si la propiedad existe **en el objeto o en su cadena de prototipos**. `Object.hasOwn(obj, "x")` solo mira las propias. Para un diccionario de datos, casi siempre quieres `Object.hasOwn`:
+
+<Pregunta id="objetos-in-vs-hasown" />
+
+<Callout type="cuidado">
+Un objeto usado como diccionario hereda propiedades de `Object.prototype`. Si un usuario puede elegir la clave, `"constructor" in dict` o `dict["toString"]` devolverán algo aunque nunca lo hayas guardado. Usa `Object.hasOwn`, o directamente un `Map`.
+</Callout>
+
+## Map: un diccionario de verdad
+
+`Map` es una colección de pares clave → valor diseñada justamente para eso:
+
+```js
+const usersById = new Map();
+usersById.set(1, { name: "Ana" });
+usersById.set(2, { name: "Luis" });
+
+usersById.get(1);    // { name: "Ana" }
+usersById.has(3);    // false
+usersById.size;      // 2
+usersById.delete(2);
+
+for (const [id, user] of usersById) {
+  console.log(id, user.name); // en orden de inserción
+}
+```
+
+La diferencia más importante con un objeto: **las claves pueden ser de cualquier tipo** y no se convierten a string.
+
+<Pregunta id="colecciones-claves-objeto" />
+
+Map y Set comparan claves con **SameValueZero**: como `===`, salvo que `NaN` es igual a `NaN` (y `0` y `-0` se consideran iguales). Los objetos se comparan **por referencia**: dos objetos con el mismo contenido son claves distintas.
+
+| | Objeto `{}` | `Map` |
+|---|---|---|
+| Tipos de clave | string y symbol (el resto se convierte a string) | cualquiera, incluidos objetos y funciones |
+| Orden | índices enteros primero, luego inserción | siempre orden de inserción |
+| Tamaño | `Object.keys(obj).length` | `map.size` |
+| Iterar | `Object.entries(obj)` | directamente con `for...of` |
+| Claves heredadas | sí (`toString`, `constructor`…) | no |
+| Serializar a JSON | directo | hay que convertirlo (`Object.fromEntries(map)`) |
+
+¿Cuándo usar cada uno? Un objeto para datos con forma fija (un usuario, unas props) y para lo que vas a serializar o guardar en estado de forma simple. Un `Map` cuando es un diccionario dinámico: muchas altas y bajas, claves que no son strings o cuando te importa el orden de inserción.
+
+## Set: unicidad y búsquedas rápidas
+
+Un `Set` guarda valores sin repetir, con la misma comparación SameValueZero:
+
+```js
+const tags = ["js", "react", "js", "css"];
+const unique = [...new Set(tags)]; // ["js", "react", "css"], en orden de inserción
+
+const selected = new Set([3, 7]);
+selected.has(7);  // true, sin recorrer nada
+selected.add(9);
+selected.delete(3);
+```
+
+`set.has(x)` es una búsqueda en tiempo constante (O(1) en promedio), mientras que `array.includes(x)` recorre el array. Si dentro de un bucle preguntas "¿está este id en la lista?", convierte la lista en `Set` una vez fuera del bucle. Es el mismo arreglo que el `Map` del inicio.
+
+## Normalizar: lo que hacen Redux y TanStack
+
+Muchas librerías guardan los datos de una API **normalizados**: en vez de un array, un diccionario id → entidad y, si importa el orden, un array de ids aparte:
+
+```js
+const posts = [
+  { id: 30, title: "Hola" },
+  { id: 10, title: "Map y Set" },
+];
+
+const state = {
+  ids: [30, 10],
+  byId: { 30: { id: 30, title: "Hola" }, 10: { id: 10, title: "Map y Set" } },
+};
+```
+
+Así, buscar o actualizar un post es `byId[id]`, sin recorrer nada, y cada entidad existe en un solo sitio. `createEntityAdapter` de Redux Toolkit genera exactamente esta forma (`ids` + `entities`). Se suele usar un objeto y no un `Map` porque el estado debe ser serializable; dentro de una función, para calcular, un `Map` es perfecto. Lo vas a implementar en la práctica.
+
+## WeakMap y WeakSet
+
+Un `Map` mantiene vivas sus claves: si usas un objeto como clave, ese objeto no se libera mientras esté en el Map. `WeakMap` es la versión que **no impide** que el recolector de basura libere la clave:
+
+```js
+const cache = new WeakMap();
+
+function getStats(list) {
+  if (!cache.has(list)) {
+    cache.set(list, computeExpensiveStats(list));
+  }
+  return cache.get(list);
+}
+```
+
+Cuando nadie más referencia `list`, la entrada desaparece sola. A cambio, las claves tienen que ser objetos y no puedes iterar ni consultar su tamaño (su contenido depende de cuándo pase el recolector). `WeakSet` es lo mismo para conjuntos, por ejemplo para marcar objetos "ya procesados". Sirven para **asociar datos a objetos que no son tuyos** sin causar fugas de memoria: cachés por objeto, metadatos sobre nodos del DOM, etc.
+
+## El protocolo de iteración
+
+¿Por qué `for...of` funciona con arrays, strings, Map y Set, pero no con un objeto normal? Porque todos ellos cumplen el **protocolo de iteración**:
+
+- Un **iterable** es un objeto con un método `[Symbol.iterator]()` que devuelve un iterador.
+- Un **iterador** es un objeto con un método `next()` que devuelve `{ value, done }`.
+
+```js
+const it = ["a", "b"][Symbol.iterator]();
+it.next(); // { value: "a", done: false }
+it.next(); // { value: "b", done: false }
+it.next(); // { value: undefined, done: true }
+```
+
+Todo lo que "consume iterables" usa este protocolo por debajo: `for...of`, el spread `[...x]`, `Array.from(x)`, el destructuring de arrays `const [a, b] = x`, `new Map(x)`, `new Set(x)`, `Promise.all(x)`, `Object.fromEntries(x)`. Si tu objeto lo implementa, funciona con todos:
+
+<Pregunta id="iteradores-protocolo" />
+
+Un objeto normal no tiene `Symbol.iterator`, por eso `for (const x of {})` lanza `TypeError` (para recorrerlo usa `Object.entries`).
+
+## Generadores
+
+Escribir iteradores a mano es tedioso. Una **función generadora** (`function*`) lo hace por ti: devuelve un objeto que es iterador e iterable a la vez, y cada `yield` entrega un valor y **pausa** la función hasta el siguiente `next()`.
+
+```js
+function* idGenerator(prefix) {
+  let n = 1;
+  while (true) {
+    yield prefix + n++;
+  }
+}
+
+const ids = idGenerator("user-");
+ids.next().value; // "user-1"
+ids.next().value; // "user-2"
+```
+
+Ese `while (true)` no cuelga nada: el generador es **perezoso** (*lazy*). Solo calcula el siguiente valor cuando alguien lo pide, así que puedes describir secuencias infinitas y consumir solo las que necesitas. Lo que no puedes hacer es `[...idGenerator("x")]`: el spread pide valores hasta que `done` sea `true`, y eso nunca pasa. Por eso con generadores infinitos siempre necesitas un límite (un `break`, un `return` o una función como `take`, que escribirás en la práctica).
+
+<Pregunta id="iteradores-generador-agotado" />
+
+<Callout type="clave">
+Un generador es un iterador de **un solo uso** y perezoso: no ejecuta nada hasta el primer `next()`, y una vez agotado no vuelve a empezar. Los arrays, Map y Set, en cambio, crean un iterador nuevo cada vez que los recorres.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="colecciones-normalizar" />
+
+<Ejercicio id="iteradores-range-take" />
+
+## Resumen
+
+- `Object.keys/values/entries` convierten un objeto en arrays; `Object.fromEntries` hace el camino inverso. Juntos sirven para transformar objetos.
+- Las claves que son índices enteros se ordenan primero; el resto mantiene el orden de inserción.
+- Los getters se ejecutan en cada lectura. Los descriptores (`writable`, `enumerable`) controlan si una propiedad se puede cambiar o se ve al enumerar.
+- `in` mira también los prototipos; `Object.hasOwn` solo las propiedades propias.
+- `Map` es un diccionario con claves de cualquier tipo, orden de inserción y `size`. `Set` guarda valores únicos con búsquedas O(1). Ambos comparan con SameValueZero y los objetos por referencia.
+- `WeakMap` y `WeakSet` asocian datos a objetos sin impedir que se liberen.
+- Un `find` dentro de un `map` es O(n·m): construye un `Map` o un diccionario normalizado una vez y busca en él.
+- Todo lo que tiene `[Symbol.iterator]` funciona con `for...of`, spread, `Array.from` y destructuring. Los generadores (`function*` + `yield`) crean iteradores perezosos de un solo uso.
