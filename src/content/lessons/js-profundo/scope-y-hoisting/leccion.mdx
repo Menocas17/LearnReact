@@ -1,0 +1,170 @@
+## El bug
+
+Reorganizas un archivo de componentes para que quede "más ordenado": primero el componente exportado, abajo los helpers y las constantes.
+
+```jsx
+export const DEFAULT_THEME = buildTheme("light");
+
+export default function App() {
+  return <Layout theme={DEFAULT_THEME} />;
+}
+
+const palettes = { light: { bg: "#fff" }, dark: { bg: "#111" } };
+
+const buildTheme = (name) => ({ name, ...palettes[name] });
+```
+
+Recargas y la app entera muestra una pantalla de error:
+
+```text
+ReferenceError: Cannot access 'buildTheme' before initialization
+```
+
+Otro día, sin tocar ningún archivo de forma sospechosa, aparece el mismo error con una constante que **importas** de otro módulo. Mueves un `import` de sitio y desaparece. Parece magia, pero es JavaScript siguiendo dos reglas muy concretas: **dónde vive cada variable** (scope) y **desde cuándo se puede usar** (hoisting y TDZ).
+
+## Scope: dónde vive una variable
+
+El scope es la región del código donde un identificador es visible. En JavaScript hay tres niveles que te importan:
+
+- **Global** (o de módulo): lo declarado en el nivel superior del archivo. En un módulo ES, cada archivo tiene su propio scope de módulo; lo que no exportas no lo ve nadie más.
+- **De función**: cada función crea un scope con sus parámetros y variables.
+- **De bloque**: cada `{ … }` (de un `if`, un `for`, o un bloque suelto) crea un scope para las variables declaradas con `let`, `const` y `class`.
+
+```js
+const app = "tienda";          // scope de módulo
+
+function checkout(items) {     // items: scope de la función
+  const total = items.length;  // scope de la función
+  if (total > 0) {
+    const mensaje = "ok";      // scope del bloque if
+  }
+  // mensaje no existe aquí
+}
+```
+
+### Resolución de identificadores
+
+Cuando el código usa un nombre, JavaScript lo busca en el scope actual; si no está, sube al scope que lo **contiene en el texto** del programa, y así hasta el de módulo y el global. Si no lo encuentra en ninguno, lanza `ReferenceError: x is not defined`. Que la cadena dependa de dónde está **escrito** el código y no de quién lo llama es lo que significa **scope léxico** (la base de los closures, que verás en su propia lección).
+
+### Shadowing
+
+Si un scope interno declara un nombre que ya existe fuera, el interno **tapa** al externo dentro de su región. La búsqueda se detiene en el primero que encuentra:
+
+```js
+const user = "Ana";
+
+function Perfil() {
+  const user = "Luis";   // shadowing: dentro de Perfil, user es este
+  return user;           // "Luis"
+}
+```
+
+El shadowing es legal y a veces útil, pero es fuente de bugs cuando no te das cuenta de que lo estás haciendo (por ejemplo, un parámetro `data` que tapa un `data` del módulo).
+
+### var: scope de función, no de bloque
+
+`var` es anterior a `let`/`const` y **ignora los bloques**: una variable `var` pertenece a la función entera (o al módulo, si está en el nivel superior), aunque la escribas dentro de un `if` o un `for`.
+
+<Pregunta id="scope-var-sale-del-bloque" />
+
+Esto tiene una consecuencia peligrosa: escribir `var x` dentro de un bloque **no crea una variable nueva** si ya hay otra `x` con `var` en la función; es la misma. Con `let` o `const` en el bloque sí tendrías una nueva (shadowing), y redeclarar con `let` en el mismo scope es directamente un `SyntaxError`.
+
+<Callout type="nota">
+En código moderno (y en cualquier proyecto de React) usa `const` por defecto y `let` cuando necesites reasignar. Vas a ver `var` en código antiguo, en snippets de Stack Overflow y en bibliotecas viejas, así que necesitas saber leerlo.
+</Callout>
+
+## Hoisting: qué existe antes de su línea
+
+Antes de ejecutar un scope (un módulo, una función, un bloque), JavaScript recorre sus declaraciones y crea los bindings correspondientes. A eso se le llama informalmente **hoisting** ("elevación"): es como si las declaraciones subieran al principio de su scope. Lo que cambia según el tipo de declaración es **con qué valor** nace cada binding:
+
+| Declaración | Antes de su línea |
+|---|---|
+| `function f() {}` | Existe y ya es la función completa |
+| `var x = 1` | Existe y vale `undefined` |
+| `let`, `const`, `class` | Existe, pero **sin inicializar** (TDZ) |
+| `import` | Enlazado a la variable del otro módulo |
+
+<Pregunta id="hoisting-var-y-function" />
+
+Por eso puedes llamar a una function declaration antes de escribirla, y por eso un `var` leído antes de tiempo da `undefined` en silencio en lugar de un error (lo cual suele esconder bugs).
+
+## TDZ: la zona muerta temporal
+
+Las variables `let`, `const` y `class` también se crean al principio de su scope, pero quedan **sin inicializar** hasta que la ejecución llega a su declaración. Ese tramo se llama **temporal dead zone** (TDZ). Cualquier lectura o escritura en la TDZ lanza:
+
+```text
+ReferenceError: Cannot access 'X' before initialization
+```
+
+Fíjate en la diferencia con `X is not defined`: este último significa "no hay ninguna variable con ese nombre"; el de la TDZ significa "existe, pero todavía no se ha ejecutado su línea". Ni siquiera `typeof` se libra:
+
+<Pregunta id="hoisting-typeof-tdz" />
+
+La TDZ y el shadowing se combinan de una forma que sorprende: la variable interna tapa a la externa en **todo** su scope, también en las líneas anteriores a su declaración.
+
+<Pregunta id="scope-shadowing-tdz" />
+
+### Es temporal, no de posición
+
+Lo que importa es **cuándo se ejecuta** el acceso, no dónde está escrito. Una función puede mencionar una `const` que se declara más abajo, siempre que la **llames** después de que esa `const` se inicializó.
+
+<Pregunta id="hoisting-arrow-y-var" />
+
+Y aquí está la clave para las arrow functions y las function expressions: `const format = (n) => …` es una **variable** a la que se asigna una función. Se comporta como cualquier `const` (TDZ hasta su línea), no como una function declaration. Si la asignas a un `var`, antes de su línea vale `undefined` y llamarla da `TypeError: … is not a function`.
+
+## El bug, explicado
+
+Vuelve al archivo del principio. Un archivo de componentes es un **módulo ES**: se ejecuta una vez, de arriba abajo, cuando alguien lo importa por primera vez (y en modo estricto). Al evaluarlo:
+
+1. `palettes` y `buildTheme` ya existen como bindings, pero están en la TDZ.
+2. La línea 1 ejecuta `buildTheme("light")` **en el nivel superior**, inmediatamente. `buildTheme` está en la TDZ: `ReferenceError`.
+
+`App` no tiene el problema: aunque use `DEFAULT_THEME`, React la llama mucho después, cuando el módulo ya terminó de evaluarse. Cada render es una llamada a función que ocurre cuando todo el nivel superior ya está inicializado. El peligro está solo en el código que se **ejecuta al cargar el módulo**: constantes calculadas, `createContext(valorPorDefecto)`, `styled(…)`, objetos de configuración que llaman a helpers.
+
+Hay dos arreglos razonables:
+
+- Ordenar el archivo para que cada valor de nivel superior se calcule **después** de todo lo que necesita.
+- Convertir los helpers en function declarations, **si** no dependen a su vez de `const` declaradas más abajo (si `buildTheme` lee `palettes`, sigue fallando aunque sea una function declaration).
+
+### Imports circulares
+
+Cuando un módulo se carga, primero se evalúan sus dependencias y después su propio cuerpo. Si `A` importa `B` y `B` importa `A`, uno de los dos tiene que ejecutarse antes de que el otro haya terminado. Los `import` son **enlaces vivos** a las variables del otro módulo: si esa variable es una `const` que aún no se ejecutó, está en su TDZ.
+
+<Pregunta id="hoisting-import-circular" />
+
+Si en ese mismo ejemplo el punto de entrada importara `Button.js` primero, el orden se invertiría: `tokens.js` se evaluaría antes y su `variants = { primary: Button }` funcionaría, porque `Button` es una function declaration (ya está inicializada al enlazar los módulos). Por eso los ciclos parecen "funcionar a veces": depende de qué archivo se cargue primero. En proyectos de React esto aparece típicamente con archivos barrel (`index.js` que reexporta todo) o con componentes que importan constantes de un archivo que a su vez importa componentes.
+
+Arreglos, de mejor a peor:
+
+- **Romper el ciclo**: mover lo compartido (`colors`) a un módulo que no importe a nadie del ciclo.
+- **No leer imports en el nivel superior**: usar `colors.primary` dentro de la función, que se ejecuta más tarde.
+- Evitar que los componentes importen desde el barrel de su propia carpeta.
+
+<Callout type="cuidado">
+Errores comunes:
+
+- Creer que `let`/`const` "no tienen hoisting". Sí lo tienen: por eso una `const` interna tapa a la externa desde la primera línea del scope y lanza en lugar de leer la de fuera.
+- Asumir que una arrow asignada a `const` se eleva como una function declaration.
+- Declarar con `var` dentro de un `if` o un `for` creyendo que la variable es local al bloque.
+- Usar `typeof x === "undefined"` como protección contra la TDZ: no protege, lanza igual.
+- Pensar que mover un `import` arriba o abajo dentro del archivo cambia algo: todos los `import` se procesan antes de ejecutar el módulo. Lo que cambia el resultado es **qué módulo se carga primero** en el ciclo.
+</Callout>
+
+<Callout type="clave">
+Cada variable existe en **todo** su scope desde el principio; lo que cambia es su valor inicial: la función completa (`function`), `undefined` (`var`) o "sin inicializar" (`let`, `const`, `class`). El error "Cannot access 'X' before initialization" siempre significa lo mismo: algo **se ejecutó** antes que la línea que inicializa `X`. Busca qué código corre en el nivel superior del módulo o qué ciclo de imports invierte el orden.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="scope-resumen-pedidos" />
+
+<Ejercicio id="scope-orden-de-inicializacion" />
+
+## Resumen
+
+- El scope es **léxico**: un identificador se busca en el scope donde está escrito y luego en los que lo contienen, hasta el global.
+- `let`, `const` y `class` tienen scope de **bloque**; `var` tiene scope de **función** e ignora los bloques.
+- Una declaración interna con el mismo nombre hace **shadowing** de la externa en todo su scope.
+- Hoisting: las function declarations existen completas desde el inicio; `var` existe como `undefined`; `let`/`const`/`class` existen pero en la **TDZ** hasta su línea.
+- Una arrow o function expression asignada a `const` sigue las reglas de `const`, no las de una function declaration.
+- La TDZ es temporal: el problema es **ejecutar** un acceso antes de la inicialización, típicamente en el nivel superior de un módulo o en un ciclo de imports.

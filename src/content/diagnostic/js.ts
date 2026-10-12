@@ -652,11 +652,11 @@ function debounce(fn, ms) {
     id = setTimeout(() => fn(...args), ms);
   };
 }
-const search = debounce((q) => console.log("buscar:", q), 50);
+const search = debounce((q) => console.log("buscar:", q), 200);
 search("r");
 search("re");
-setTimeout(() => search("rea"), 10);
-setTimeout(() => search("react"), 100);
+setTimeout(() => search("rea"), 50);
+setTimeout(() => search("react"), 600);
 `),
       options: opts(
         "buscar: react",
@@ -666,7 +666,7 @@ setTimeout(() => search("react"), 100);
       ),
       correct: "c",
       explanation:
-        "Cada llamada cancela el timer anterior (todas comparten id gracias al closure). \"rea\" llega a los 10 ms y programa la búsqueda para los 60 ms; nada la cancela, así que se ejecuta. \"react\" llega a los 100 ms y se ejecuta a los 150 ms.",
+        "Cada llamada cancela el timer anterior (todas comparten id gracias al closure). \"rea\" llega a los 50 ms y programa la búsqueda para los 250 ms; nada la cancela, así que se ejecuta. \"react\" llega a los 600 ms y se ejecuta a los 800 ms.",
     },
     {
       id: "diag-async-fetch-404",
