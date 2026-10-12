@@ -75,7 +75,7 @@ export const db = crearCliente();
 // Los dos reciben exactamente el mismo objeto db.
 ```
 
-Eso es lo que convierte a un módulo en un **singleton** natural, y es justo lo que quieres para un cliente de base de datos, un logger o un store de Zustand: una sola instancia compartida por toda la app.
+Eso es lo que convierte a un módulo en un **singleton** natural, y es justo lo que quieres para un cliente de base de datos o un logger: una sola instancia compartida por toda la app. (Un store de Zustand creado a nivel de módulo también es un singleton: perfecto en el navegador, pero en el servidor tendría el problema que verás ahora.)
 
 Ahora piensa en un servidor de Next.js. El proceso de Node arranca, evalúa `lib/vistos.js` una vez, y después atiende miles de peticiones de usuarios distintos **con el mismo módulo en memoria**. El array `vistos` no es "de esta petición": es del proceso.
 
@@ -133,7 +133,7 @@ El motor lanza sus propios errores con tipos nativos que conviene reconocer:
 |---|---|---|
 | `TypeError` | Operación sobre un valor del tipo equivocado | `null.x`, `undefined()`, reasignar una `const` |
 | `ReferenceError` | Variable que no existe o leída antes de declararse (TDZ) | `console.log(noExiste)` |
-| `RangeError` | Valor fuera del rango permitido | `new Array(-1)`, recursión infinita |
+| `RangeError` | Valor fuera del rango permitido | `new Array(-1)`, recursión infinita (en Chrome y Node) |
 | `SyntaxError` | Código o texto que no se puede analizar | `JSON.parse("{ roto")` |
 
 ## try, catch y finally
@@ -209,7 +209,7 @@ try {
 
 ## Errores en código asíncrono
 
-Una función `async` nunca lanza de forma síncrona: devuelve una **promesa rechazada**. Un `try/catch` solo captura ese rechazo si **espera** la promesa con `await` dentro del `try`. Sin `await`, la promesa sale del `try` sin haber fallado todavía y el rechazo llega cuando el `try/catch` ya terminó.
+Una función `async` nunca lanza de forma síncrona: devuelve una **promesa rechazada**. Un `try/catch` solo captura ese rechazo si **espera** la promesa con `await` dentro del `try`. Sin `await`, la promesa (aunque ya esté rechazada) sale del `try` como un valor normal: dentro del bloque no se lanza nada, así que el `catch` no se ejecuta. Es `await` lo que convierte el rechazo en una excepción.
 
 <Pregunta id="errores-return-sin-await" />
 
@@ -250,7 +250,7 @@ function Formulario() {
 }
 ```
 
-Si prefieres que lo muestre el boundary, relanza el error durante el render (`if (error) throw error;`): ahí sí lo ve. En el App Router de Next.js, los archivos `error.js` son error boundaries con la misma regla.
+Si prefieres que lo muestre el boundary, relanza el error durante el render (`if (error) throw error;`): ahí sí lo ve. Otra vía en React 19: los errores que se lanzan dentro de una Transition (`startTransition`, acciones de formulario) también llegan al boundary más cercano. En el App Router de Next.js, los archivos `error.js` son error boundaries con la misma regla.
 
 ## Práctica
 
@@ -266,4 +266,4 @@ Si prefieres que lo muestre el boundary, relanza el error durante el render (`if
 - `import()` devuelve una promesa del módulo y permite **code splitting** (`React.lazy`). Evita dependencias circulares sacando lo común a otro módulo. CommonJS es el sistema antiguo de Node, sin live bindings.
 - Lanza siempre `Error` o subclases con `name`; usa `cause` para añadir contexto sin perder el original.
 - `finally` se ejecuta siempre, también cuando `catch` relanza. Captura lo que sabes manejar y relanza el resto.
-- `try/catch` no ve promesas sin `await`, callbacks posteriores ni handlers de eventos. Los error boundaries solo capturan errores de render: en handlers y código async, captura tú y guárdalo en el estado.
+- `try/catch` no ve promesas sin `await`, callbacks posteriores ni handlers de eventos. Los error boundaries capturan errores de render (y, en React 19, los lanzados dentro de una Transition): en handlers y código async, captura tú y guárdalo en el estado.

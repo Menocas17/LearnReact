@@ -21,7 +21,7 @@ class ErrorBoundary extends Component {
 }
 ```
 
-No hay hook equivalente: un error boundary **tiene que ser una clase**. Y en ese fragmento hay cinco cosas de JavaScript que conviene entender de verdad: `class`, `extends`, un campo (`state = …`), un método `static` y métodos normales que usan `this`. Lo mismo te vas a encontrar en código legacy con class components y cada vez que quieras errores con tipo (`class NotFoundError extends Error`).
+No hay hook equivalente: en React, un error boundary **tiene que ser una clase** (librerías como react-error-boundary o `catchError` de Next.js te dan una ya hecha, pero por dentro hay una clase como esta). Y en ese fragmento hay cinco cosas de JavaScript que conviene entender de verdad: `class`, `extends`, un campo (`state = …`), un método `static` y métodos normales que usan `this`. Lo mismo te vas a encontrar en código legacy con class components y cada vez que quieras errores con tipo (`class NotFoundError extends Error`).
 
 La sorpresa es que JavaScript **no tiene clases** en el sentido de Java o C#. `class` es una sintaxis cómoda sobre un mecanismo más simple: los **prototipos**. Si entiendes los prototipos, las clases dejan de tener misterio.
 
@@ -83,7 +83,7 @@ Object.keys(rex); // ["name"]: solo propias (y enumerables)
 Esta asimetría es la fuente de casi todas las sorpresas con prototipos:
 
 - **Leer** una propiedad recorre la cadena.
-- **Asignar** (`obj.x = …`) crea o cambia una propiedad **propia** de `obj`. Nunca modifica el prototipo.
+- **Asignar** (`obj.x = …`) crea o cambia una propiedad **propia** de `obj`. Nunca modifica el prototipo. (Excepción: si más arriba en la cadena hay un *setter* para `x`, la asignación lo ejecuta en vez de crear la propiedad; lo verás con `set` en las clases.)
 
 Si asignas una propiedad que ya existía más arriba, la nueva **tapa** a la heredada. Se llama *shadowing*:
 
@@ -167,7 +167,7 @@ Dentro de una clase hay dos lugares distintos donde pueden acabar las cosas, y c
 | `get x() { … }` / `set x(v) { … }` | En `Clase.prototype`, compartido |
 | `campo = valor` | En **cada instancia**, se crea al construirla |
 | `static algo` | En la propia clase (la función), no en las instancias |
-| `#privado` | En cada instancia, inaccesible desde fuera de la clase |
+| `#privado` | Campos: en cada instancia; métodos `#m()`: compartidos. Inaccesible desde fuera de la clase |
 
 <Pregunta id="clases-metodo-vs-campo-arrow" />
 
@@ -282,7 +282,7 @@ Después, el mismo tipo de herencia **sin** `class`, solo con `Object.create`, p
 ## Resumen
 
 - Todo objeto tiene un **`[[Prototype]]`** (se lee con `Object.getPrototypeOf`). Leer una propiedad sube por la **cadena de prototipos** hasta encontrarla o llegar a `null`.
-- **Asignar** siempre escribe en el propio objeto: si la propiedad existía más arriba, la tapa (*shadowing*). Mutar un objeto heredado, en cambio, afecta a todos los que lo comparten.
+- **Asignar** escribe en el propio objeto (salvo que haya un setter heredado): si la propiedad existía más arriba, la tapa (*shadowing*). Mutar un objeto heredado, en cambio, afecta a todos los que lo comparten.
 - `Object.hasOwn` distingue propias de heredadas; `in` mira toda la cadena.
 - `.prototype` es una propiedad de las funciones constructoras: el objeto que reciben como prototipo las instancias creadas con `new`. Así todos los arrays comparten `Array.prototype.map`.
 - `class` es sintaxis sobre funciones y prototipos: métodos, getters y setters van al prototipo (compartidos); campos y `#privados` van a cada instancia; `static` va a la clase.

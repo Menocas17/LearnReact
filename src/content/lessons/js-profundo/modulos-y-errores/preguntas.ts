@@ -8,7 +8,7 @@ export const preguntas: readonly Question[] = [
     concepts: ["js.modulos"],
     difficulty: "trampa",
     prompt:
-      "Este archivo se usa desde un Server Component en Next.js. El servidor acaba de arrancar. Ana visita /perfil y, segundos después, Luis visita /perfil desde otro navegador. ¿Qué devuelve recientes() en la petición de Luis?",
+      "Este archivo se usa desde un Server Component de una página dinámica en Next.js, que corre en producción en un único proceso de Node. El servidor acaba de arrancar. Ana visita /perfil y, segundos después, Luis visita /perfil desde otro navegador. ¿Qué devuelve recientes() en la petición de Luis?",
     code: code("js", `
 // lib/vistos.js
 const vistos = [];
@@ -169,7 +169,7 @@ sinAwait().then(
     ),
     correct: "b",
     explanation:
-      "fail() no lanza: devuelve una promesa rechazada. Con return await, la función espera dentro del try, el rechazo se convierte en una excepción ahí mismo y el catch la captura. Con return a secas, la promesa sale del try sin haber fallado todavía; cuando se rechaza, el try/catch ya terminó y el rechazo pasa a la promesa de sinAwait. Un try/catch solo ve los errores de promesas que espera con await.",
+      "fail() no lanza: devuelve una promesa rechazada. Con return await, la función espera dentro del try, el rechazo se convierte en una excepción ahí mismo y el catch la captura. Con return a secas, la promesa rechazada sale del try como un valor normal (dentro del bloque no se lanza nada), así que el catch no se ejecuta y el rechazo pasa a la promesa de sinAwait. Un try/catch solo ve los errores de promesas que espera con await.",
   },
   {
     id: "errores-boundary-evento",

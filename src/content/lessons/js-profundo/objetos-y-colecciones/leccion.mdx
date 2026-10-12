@@ -151,7 +151,7 @@ Map y Set comparan claves con **SameValueZero**: como `===`, salvo que `NaN` es 
 | Tamaño | `Object.keys(obj).length` | `map.size` |
 | Iterar | `Object.entries(obj)` | directamente con `for...of` |
 | Claves heredadas | sí (`toString`, `constructor`…) | no |
-| Serializar a JSON | directo | hay que convertirlo (`Object.fromEntries(map)`) |
+| Serializar a JSON | directo | hay que convertirlo (`Object.fromEntries(map)` si las claves son strings, o `[...map]`) |
 
 ¿Cuándo usar cada uno? Un objeto para datos con forma fija (un usuario, unas props) y para lo que vas a serializar o guardar en estado de forma simple. Un `Map` cuando es un diccionario dinámico: muchas altas y bajas, claves que no son strings o cuando te importa el orden de inserción.
 
@@ -171,7 +171,7 @@ selected.delete(3);
 
 `set.has(x)` es una búsqueda en tiempo constante (O(1) en promedio), mientras que `array.includes(x)` recorre el array. Si dentro de un bucle preguntas "¿está este id en la lista?", convierte la lista en `Set` una vez fuera del bucle. Es el mismo arreglo que el `Map` del inicio.
 
-## Normalizar: lo que hacen Redux y TanStack
+## Normalizar: lo que hace Redux Toolkit
 
 Muchas librerías guardan los datos de una API **normalizados**: en vez de un array, un diccionario id → entidad y, si importa el orden, un array de ids aparte:
 
@@ -204,7 +204,7 @@ function getStats(list) {
 }
 ```
 
-Cuando nadie más referencia `list`, la entrada desaparece sola. A cambio, las claves tienen que ser objetos y no puedes iterar ni consultar su tamaño (su contenido depende de cuándo pase el recolector). `WeakSet` es lo mismo para conjuntos, por ejemplo para marcar objetos "ya procesados". Sirven para **asociar datos a objetos que no son tuyos** sin causar fugas de memoria: cachés por objeto, metadatos sobre nodos del DOM, etc.
+Cuando nadie más referencia `list`, la entrada desaparece sola. A cambio, las claves tienen que ser objetos (o symbols no registrados) y no puedes iterar ni consultar su tamaño (su contenido depende de cuándo pase el recolector). `WeakSet` es lo mismo para conjuntos, por ejemplo para marcar objetos "ya procesados". Sirven para **asociar datos a objetos que no son tuyos** sin causar fugas de memoria: cachés por objeto, metadatos sobre nodos del DOM, etc.
 
 ## El protocolo de iteración
 
