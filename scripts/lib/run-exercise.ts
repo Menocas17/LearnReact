@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { FileMap } from "../../src/content/types";
@@ -13,9 +13,9 @@ const TMP = path.join(ROOT, ".validate-tmp");
  * con Vitest y globals (describe/test/expect), como hace Sandpack con Jest.
  */
 export async function exerciseTestsPass(name: string, files: FileMap, tests: FileMap) {
-  const dir = path.join(TMP, name);
-  await rm(dir, { recursive: true, force: true });
-  await mkdir(dir, { recursive: true });
+  // Directorio único por ejecución: varias validaciones pueden correr a la vez.
+  await mkdir(TMP, { recursive: true });
+  const dir = await mkdtemp(path.join(TMP, `${name}-`));
   await writeFile(path.join(dir, "vitest.config.mjs"), "export default { test: { globals: true } };\n");
   for (const [file, source] of Object.entries({ ...files, ...tests })) {
     const target = path.join(dir, file);
