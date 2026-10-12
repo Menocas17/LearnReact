@@ -1,0 +1,195 @@
+## El bug
+
+Si alguna vez abriste un proyecto React antiguo, habrás visto componentes de clase como este:
+
+```jsx
+class Contador extends React.Component {
+  state = { count: 0 };
+
+  handleClick() {
+    this.setState({ count: this.state.count + 1 });
+  }
+
+  render() {
+    return <button onClick={this.handleClick}>{this.state.count}</button>;
+  }
+}
+```
+
+Se renderiza bien, pero al hacer click explota:
+
+```text
+TypeError: Cannot read properties of undefined (reading 'setState')
+```
+
+`this` es `undefined` dentro de `handleClick`. ¿Cómo puede ser, si `handleClick` es un método de la clase? Por eso el código de esa época está lleno de `this.handleClick = this.handleClick.bind(this)` en el constructor o de métodos escritos como `handleClick = () => { … }`. Lo mismo pasa fuera de React con `setTimeout(obj.metodo, 1000)`: el método se ejecuta, pero sin su objeto.
+
+La causa es una sola regla: **`this` no depende de dónde se escribió la función, sino de cómo se llama**.
+
+## this se decide en cada llamada
+
+Casi todo en JavaScript es léxico: una variable se busca donde está escrito el código. `this` es la gran excepción. Cada vez que llamas a una función normal (declarada con `function` o como método), JavaScript decide qué valor tiene `this` **mirando la forma de la llamada**:
+
+```js
+function who() {
+  return this?.name;
+}
+
+const ana = { name: "Ana", who };
+
+ana.who();          // método: this es ana → "Ana"
+who();              // llamada simple: this es undefined (modo estricto)
+new who();          // new: this es un objeto recién creado
+who.call(ana);      // explícito: this es ana → "Ana"
+```
+
+Las cuatro formas, de mayor a menor prioridad, más el caso especial de las arrow functions:
+
+| Forma de la llamada | Ejemplo | Valor de `this` |
+|---|---|---|
+| Con `new` | `new Persona("Ana")` | El objeto nuevo que se está construyendo |
+| Explícita | `f.call(obj)`, `f.apply(obj)`, `f.bind(obj)()` | `obj` |
+| Como método | `obj.f()`, `a.b.f()` | El objeto antes del último punto (`obj`, `a.b`) |
+| Simple | `f()` | `undefined` en modo estricto; `globalThis` en modo no estricto |
+| Arrow function | `() => this` | No tiene `this` propio: usa el del scope donde se escribió |
+
+La regla del método es literal: lo que cuenta es que en **el momento de la llamada** haya un objeto delante del punto. La función no "pertenece" al objeto; solo está guardada en una de sus propiedades.
+
+<Pregunta id="this-depende-de-la-llamada" />
+
+## Por qué se pierde: extraer un método
+
+Ahora el bug se entiende. Cuando escribes `onClick={this.handleClick}` no llamas al método: pasas **la función** a React, sin el objeto. Más tarde React la llama como una función más, algo equivalente a:
+
+```js
+const handler = props.onClick; // la función, sin el objeto
+handler(event);                // llamada simple → this es undefined
+```
+
+Lo mismo pasa con `setTimeout(obj.metodo)`, `array.forEach(obj.metodo)` o `const { metodo } = obj`. En todos los casos separas la función de su objeto y quien la llama después lo hace "en simple".
+
+¿Y por qué `undefined` y no el objeto global? Porque **el cuerpo de una clase siempre está en modo estricto**. Lo verás en detalle más abajo.
+
+Las dos soluciones clásicas en React de clases:
+
+```jsx
+class Contador extends React.Component {
+  constructor(props) {
+    super(props);
+    // 1. Crear una versión con this fijo y guardarla en la instancia
+    this.handleClick = this.handleClick.bind(this);
+  }
+
+  // 2. O un campo de clase con arrow function: se crea por instancia
+  //    y su this es siempre esa instancia
+  handleReset = () => {
+    this.setState({ count: 0 });
+  };
+}
+```
+
+Y la tercera, la moderna: los **componentes de función** no usan `this` en absoluto. Un handler es un closure que ve `count` y `setCount` directamente, así que no hay nada que perder:
+
+```jsx
+function Contador() {
+  const [count, setCount] = useState(0);
+  return <button onClick={() => setCount((c) => c + 1)}>{count}</button>;
+}
+```
+
+## Arrow functions: sin this propio
+
+Una arrow function no tiene `this` propio. Si lo usas dentro, se busca **léxicamente**, como una variable más: es el `this` de la función normal que la rodea (o el del módulo, si no hay ninguna). Por eso no sirven como métodos de objeto, pero son perfectas como callbacks dentro de un método:
+
+<Pregunta id="this-arrow-en-callback" />
+
+Tampoco puedes cambiar el `this` de una arrow con `call`, `apply` o `bind`: se ignora. Y no se pueden usar con `new`.
+
+En un campo de clase como `handleReset = () => { … }`, el inicializador se evalúa al construir cada instancia, con `this` igual a esa instancia. La arrow lo captura y ya no lo suelta, por eso sobrevive a que la pases como callback.
+
+## call, apply y bind
+
+Las tres permiten elegir `this` a mano:
+
+```js
+function presentar(saludo, signo) {
+  return saludo + ", soy " + this.name + signo;
+}
+const ana = { name: "Ana" };
+
+presentar.call(ana, "Hola", "!");     // ejecuta ya; argumentos sueltos
+presentar.apply(ana, ["Hola", "!"]);  // ejecuta ya; argumentos en un array
+const f = presentar.bind(ana, "Hola"); // NO ejecuta: devuelve una función nueva
+f("!");                                // "Hola, soy Ana!"
+```
+
+- `call` y `apply` **llaman a la función inmediatamente**. Solo se diferencian en cómo reciben los argumentos (`apply` con array; hoy suele bastar `call` con spread: `fn.call(obj, ...args)`).
+- `bind` **devuelve una función nueva** con `this` fijado. Además permite **aplicación parcial**: los argumentos que le pases después de `this` quedan fijos al principio (`bind(ana, "Hola")`). Si no te importa `this`, se usa `null`: `sumar.bind(null, 10)`.
+- El `this` de una función enlazada **no se puede volver a cambiar**: ni `call`, ni `apply`, ni otro `bind`. Solo `new` lo ignora (crea su propio objeto).
+
+<Pregunta id="this-bind-no-se-reenlaza" />
+
+## this en listeners del DOM
+
+`addEventListener` llama a un listener declarado con `function` con `this` igual al elemento donde **registraste** el listener, que es `event.currentTarget`. No es `event.target`, que es el elemento exacto donde ocurrió el evento (puede ser un hijo):
+
+<Pregunta id="this-listener-currenttarget" />
+
+En código moderno es más claro no usar `this` aquí y leer `event.currentTarget` directamente: funciona igual con arrow functions y no depende de cómo se escribió el listener. En React, el `onClick` de un elemento tampoco te da `this`; usa `e.currentTarget` si lo necesitas.
+
+## Modo estricto: por qué undefined y no window
+
+En la tabla aparecían dos valores para la llamada simple. Depende del **modo** del código:
+
+- **Modo no estricto** (*sloppy*): es el modo por defecto de un `<script>` clásico o de un archivo CommonJS sin `"use strict"`. En una llamada simple, un `this` `undefined` o `null` se sustituye por el objeto global (`globalThis`, que en el navegador es `window`).
+- **Modo estricto**: `this` es exactamente lo que se pasó; en una llamada simple, `undefined`.
+
+Se activa con la directiva `"use strict"` al principio del archivo o de una función, pero sobre todo **es automático en dos sitios**: los **módulos ES** (todo archivo con `import`/`export`, lo que usas en Vite, Next y cualquier proyecto moderno) y los **cuerpos de clase**. Por eso en tu código casi siempre verás `undefined`, y por eso el error es "Cannot read properties of undefined" en vez de leer algo raro de `window` en silencio.
+
+<Pregunta id="this-script-vs-modulo" />
+
+El modo estricto cambia más cosas. Las dos más importantes convierten errores silenciosos en excepciones:
+
+```js
+// En un módulo (estricto)
+total = 10; // ReferenceError: total is not defined
+            // (en sloppy crearía una variable global sin avisar)
+
+const punto = Object.freeze({ x: 1 });
+punto.x = 2; // TypeError: Cannot assign to read only property 'x'
+             // (en sloppy la asignación se ignora sin avisar)
+```
+
+Además, en el nivel superior de un módulo `this` es `undefined` (en un script clásico es el objeto global).
+
+<Pregunta id="this-estricto-errores" />
+
+<Callout type="cuidado">
+Errores comunes con `this`:
+
+- Pasar un método como callback (`onClick={this.handleClick}`, `setTimeout(obj.metodo)`, `arr.map(obj.metodo)`) y esperar que recuerde su objeto. Envuélvelo (`() => obj.metodo()`) o enlázalo con `bind`.
+- Usar una arrow function como método de un objeto literal (`{ name: "Ana", saludar: () => this.name }`): su `this` es el de fuera, no el objeto.
+- Usar `function` dentro de un método para un callback y esperar el `this` del método. Usa una arrow.
+- Llamar a `bind` en cada render o en cada llamada creyendo que "arregla" la función original: `bind` no modifica nada, devuelve una función nueva que tienes que guardar.
+- Intentar cambiar el `this` de una función ya enlazada o de una arrow con `call`: se ignora sin error.
+</Callout>
+
+<Callout type="clave">
+Ante cualquier `this`, no mires dónde está escrita la función: busca **la línea donde se llama**. ¿Hay `new`? ¿`call`/`apply`/`bind`? ¿Un objeto antes del punto? Si no hay nada, es una llamada simple y en un módulo `this` es `undefined`. Y si la función es una arrow, sube al scope donde se escribió.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="this-carrito-callbacks" />
+
+<Ejercicio id="this-my-bind" />
+
+## Resumen
+
+- `this` se decide **al llamar** la función normal: `new` → objeto nuevo; `call`/`apply`/`bind` → el que indiques; `obj.f()` → `obj`; `f()` → `undefined` en estricto o `globalThis` en sloppy.
+- Las **arrow functions** no tienen `this` propio: usan el del scope donde se escribieron, y `call`/`bind` no lo cambian.
+- Extraer un método (`const { f } = obj`, pasarlo como callback) lo separa de su objeto: por eso `onClick={this.handleClick}` fallaba y se usaba `bind` en el constructor o campos con arrow.
+- `call` y `apply` ejecutan ya (argumentos sueltos o en array); `bind` devuelve una función nueva, con `this` fijo para siempre y argumentos parcialmente aplicados.
+- En un listener con `function`, `this` es `event.currentTarget`; mejor lee `currentTarget` directamente.
+- Los **módulos ES** y los **cuerpos de clase** son siempre estrictos: `this` `undefined` en llamadas simples, `ReferenceError` al asignar variables no declaradas y `TypeError` al escribir propiedades de solo lectura.
+- Los componentes de función evitan todo esto: usan closures en vez de `this`.
