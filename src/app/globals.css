@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #fbfbfa;
+  --foreground: #1c1c1a;
+  --card: #ffffff;
+  --muted: #6b6b66;
+  --border: #e5e4df;
+  --subtle: #f2f1ec;
+  --primary: #3b5bdb;
+  --primary-foreground: #ffffff;
+  --dominado: #2f9e44;
+  --fragil: #e08a00;
+  --hueco: #e03131;
+  --sin-evaluar: #a8a8a2;
+  --code-bg: #f6f6f3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #121211;
+    --foreground: #ecece8;
+    --card: #1a1a19;
+    --muted: #9a9a94;
+    --border: #2e2e2b;
+    --subtle: #222220;
+    --primary: #748ffc;
+    --primary-foreground: #0b0b0a;
+    --dominado: #51cf66;
+    --fragil: #fcc419;
+    --hueco: #ff6b6b;
+    --sin-evaluar: #6b6b66;
+    --code-bg: #1e1e1c;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-subtle: var(--subtle);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-dominado: var(--dominado);
+  --color-fragil: var(--fragil);
+  --color-hueco: var(--hueco);
+  --color-sin-evaluar: var(--sin-evaluar);
+  --color-code-bg: var(--code-bg);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Bloques de código resaltados con Shiki (temas claro/oscuro). */
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+  background-color: transparent !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .shiki,
+  .shiki span {
+    color: var(--shiki-dark);
+  }
+}

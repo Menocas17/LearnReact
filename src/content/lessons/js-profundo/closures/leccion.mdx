@@ -1,0 +1,137 @@
+## El bug
+
+Probablemente has escrito algo así alguna vez:
+
+```jsx
+function Timer() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setCount(count + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return <p>{count}</p>;
+}
+```
+
+Esperas que cuente 1, 2, 3… pero se queda en **1** para siempre. No es un bug de React: es JavaScript haciendo exactamente lo que dice la especificación. Para entenderlo necesitas una pieza: los **closures**.
+
+## Scope léxico: dónde se busca una variable
+
+Cuando JavaScript encuentra un identificador, lo busca en el scope donde **se escribió** el código (no donde se ejecuta), y si no lo encuentra sube al scope padre, y así hasta el global.
+
+```js
+const saludo = "Hola";
+
+function exterior() {
+  const nombre = "Ana";
+  function interior() {
+    console.log(saludo, nombre); // busca en interior → exterior → global
+  }
+  interior();
+}
+```
+
+Que la búsqueda dependa de dónde está escrito el código, y no de quién lo llama, es lo que significa **léxico**.
+
+## Qué es un closure
+
+Un closure es una función **junto con el entorno de variables donde fue creada**. Toda función en JavaScript lo es, pero se nota cuando una función se crea dentro de otra: se lleva consigo una referencia a las variables de la función exterior, y puede seguir usándolas aunque la exterior ya haya terminado.
+
+```js
+function createCounter() {
+  let count = 0;            // vive en el entorno de esta llamada
+  return () => {
+    count++;                // la función devuelta lo sigue viendo
+    return count;
+  };
+}
+
+const next = createCounter();
+next(); // 1
+next(); // 2
+```
+
+`createCounter` terminó, pero `count` no se destruye: la función devuelta mantiene vivo ese entorno. Y cada llamada a `createCounter()` crea un entorno **nuevo**:
+
+<Pregunta id="closures-cuenta-independiente" />
+
+## Captura variables, no valores
+
+Un closure no guarda una foto del valor: guarda una referencia a la **variable**. Si la variable cambia, el closure ve el valor nuevo.
+
+<Pregunta id="closures-variable-no-valor" />
+
+Por eso `for (let i = 0; …)` funciona con callbacks y `var` no: `let` crea una variable nueva **en cada iteración**, mientras que `var` (o una variable declarada fuera del bucle) es una sola variable compartida.
+
+<Callout type="clave">
+Un closure lee el valor **actual** de la variable que capturó. La pregunta importante siempre es: ¿qué variable capturó?
+</Callout>
+
+## Cada render es una llamada a función
+
+Ahora la conexión con React. Un componente es una función, y **cada render es una llamada nueva**. En cada llamada, `useState` devuelve el valor de ese render y lo asignas a una `const` nueva:
+
+```jsx
+// Render 1: React llama a Timer() y useState devuelve 0
+const [count, setCount] = useState(0); // count = 0 (constante de ESTE render)
+
+// Render 2: React vuelve a llamar a Timer() y useState devuelve 1
+const [count, setCount] = useState(0); // count = 1 (otra constante distinta)
+```
+
+Las funciones que creas durante un render (handlers, callbacks de efectos, timeouts) cierran sobre las variables **de ese render**. Esa constante nunca cambia: el siguiente render tiene la suya.
+
+<Pregunta id="closures-render-snapshot" />
+
+## El bug, explicado
+
+Volvamos al temporizador:
+
+1. **Render 1**: `count` es `0`. El efecto se ejecuta (las dependencias `[]` dicen "solo al montar") y crea el intervalo. Su callback cierra sobre el `count` del render 1, que vale `0`.
+2. Cada segundo, el callback ejecuta `setCount(0 + 1)`.
+3. React renderiza con `count = 1`, pero el efecto **no se vuelve a ejecutar**, así que el intervalo sigue usando el callback viejo, que ve `count = 0`.
+4. Para siempre: `setCount(1)`, `setCount(1)`… El valor ya es 1, así que no cambia nada.
+
+A esto se le llama **closure obsoleta** (*stale closure*): una función que sigue viendo variables de un render antiguo.
+
+<Pregunta id="closures-fix-interval" />
+
+La solución idiomática es la **función de actualización**:
+
+```jsx
+setCount((c) => c + 1);
+```
+
+El callback ya no lee `count`: React le pasa el valor más reciente. El closure sigue siendo "viejo", pero ya no importa porque no depende de nada que cambie.
+
+## Dónde más usas closures
+
+Los closures están detrás de muchas cosas que usas a diario:
+
+- **Estado privado**: como en `createCounter`, nadie puede tocar `count` desde fuera.
+- **Funciones fábrica**: `makeGreeter("Hola")` devuelve funciones configuradas.
+- **Debounce, throttle y memoización**: guardan un timer o una caché entre llamadas.
+- **Handlers de eventos en React**: cada `onClick={() => borrar(item.id)}` cierra sobre `item`.
+- **Stores externos** (Zustand, por ejemplo): guardan estado y suscriptores en closures, como el `createStore` del patrón observer. Los callbacks que devuelven los custom hooks, en cambio, cierran sobre el estado de su render.
+
+<Callout type="cuidado">
+Un closure mantiene vivo todo lo que referencia. Si guardas un closure en un sitio de larga duración (un listener global, una caché) que captura objetos grandes, esos objetos no se liberan. Por eso los efectos limpian sus listeners.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="closures-once" />
+
+<Ejercicio id="closures-contador" />
+
+## Resumen
+
+- El scope es **léxico**: una función ve las variables del lugar donde se escribió.
+- Un **closure** es una función más el entorno donde se creó; ese entorno sobrevive mientras la función exista.
+- Captura **variables**, no valores. Cada llamada a la función exterior crea variables nuevas.
+- En React cada render es una llamada nueva: los handlers y efectos ven las variables **de su render**.
+- Si un callback de larga duración necesita el estado actual, usa la función de actualización (o declara la dependencia).
