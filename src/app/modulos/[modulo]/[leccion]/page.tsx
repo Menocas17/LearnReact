@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { getConcept, getModuleById, getModuleBySlug } from "@/content/curriculum";
-import { getLesson, lessons } from "@/content/lessons";
+import { getLesson, lessons, lessonsForModule } from "@/content/lessons";
 import { lessonContent } from "@/content/lessons/mdx";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getCompletedLessons } from "@/lib/data/progress";
@@ -88,6 +88,8 @@ async function Lesson({ params }: Pick<PageProps<"/modulos/[modulo]/[leccion]">,
           <LessonCompletion lessonId={lesson.id} />
         </Suspense>
       </Card>
+
+      <LessonNav moduleId={mod.id} moduleSlug={mod.slug} lessonId={lesson.id} />
     </article>
   );
 }
@@ -99,5 +101,32 @@ async function LessonCompletion({ lessonId }: { lessonId: string }) {
     <p className="text-sm text-dominado">✓ Lección completada</p>
   ) : (
     <CompleteLessonButton lessonId={lessonId} />
+  );
+}
+
+function LessonNav({ moduleId, moduleSlug, lessonId }: { moduleId: string; moduleSlug: string; lessonId: string }) {
+  const list = lessonsForModule(moduleId);
+  const index = list.findIndex((l) => l.id === lessonId);
+  const prev = list[index - 1];
+  const next = list[index + 1];
+  return (
+    <nav aria-label="Lecciones del módulo" className="flex justify-between gap-4 text-sm">
+      {prev ? (
+        <Link href={`/modulos/${moduleSlug}/${prev.slug}`} className="hover:underline">
+          ← {prev.title}
+        </Link>
+      ) : (
+        <span />
+      )}
+      {next ? (
+        <Link href={`/modulos/${moduleSlug}/${next.slug}`} className="text-right hover:underline">
+          {next.title} →
+        </Link>
+      ) : (
+        <Link href={`/modulos/${moduleSlug}`} className="text-right hover:underline">
+          Volver al módulo →
+        </Link>
+      )}
+    </nav>
   );
 }
