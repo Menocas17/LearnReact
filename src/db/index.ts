@@ -20,12 +20,16 @@ const globalForDb = globalThis as unknown as { __learnreactDb?: DbState };
 function createDb(): DbState {
   const url = process.env.DATABASE_URL;
   if (url) {
-    const pool = new Pool({ connectionString: url });
+    // Pocas conexiones por instancia: en Vercel cada función serverless abre su propio pool.
+    // Usa la cadena "pooled" de Neon (host con -pooler) para no agotar conexiones.
+    const pool = new Pool({ connectionString: url, max: 5 });
     // Las migraciones de Postgres real se aplican con `pnpm db:migrate`.
     return { db: drizzlePg(pool, { schema }), ready: Promise.resolve() };
   }
 
-  const dataDir = path.join(process.cwd(), process.env.PGLITE_DIR ?? path.join(".data", "pglite"));
+  // Ruta acotada a ./.data: una ruta totalmente dinámica haría que el build empaquete
+  // todo el proyecto en la función de servidor (Vercel tiene límite de tamaño).
+  const dataDir = path.join(process.cwd(), ".data", process.env.PGLITE_DIR ?? "pglite");
   mkdirSync(dataDir, { recursive: true });
   const client = new PGlite(dataDir);
   const db = drizzlePglite(client, { schema });

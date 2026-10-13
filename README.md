@@ -34,16 +34,36 @@ pnpm build
 AUTH_MODE=local pnpm start
 ```
 
-## Desplegar (opcional)
+## Desplegar en Vercel
 
-1. Crea una base de datos Postgres (por ejemplo, Neon) y aplica las migraciones:
-   `DATABASE_URL=… pnpm db:migrate`.
-2. Crea una OAuth App en GitHub con callback `https://TU-DOMINIO/api/auth/callback/github`.
-3. Configura las variables de `.env.example` (`DATABASE_URL`, `BETTER_AUTH_SECRET`,
-   `BETTER_AUTH_URL`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `ALLOWED_EMAILS`).
+Necesitas tres cosas: una base de datos Postgres, una OAuth App de GitHub y las variables de
+entorno. En producción siempre se exige login con GitHub y solo entran los emails de
+`ALLOWED_EMAILS`.
 
-En producción con `DATABASE_URL` siempre se exige login con GitHub, y solo pueden entrar los
-emails de `ALLOWED_EMAILS`.
+1. **Importa el repo en Vercel** (framework: Next.js, sin cambiar los comandos). Vercel despliega
+   a producción la rama `main`: fusiona esta rama en `main` o cambia la *Production Branch* en
+   Settings → Git.
+2. **Base de datos.** En el proyecto de Vercel: Storage → Create → Neon (Postgres). Copia la
+   cadena de conexión **pooled** (el host incluye `-pooler`) como `DATABASE_URL`.
+3. **Migraciones.** Desde tu máquina, una vez (y cada vez que cambie el esquema):
+   `DATABASE_URL="<cadena de Neon>" pnpm db:migrate`.
+4. **OAuth App de GitHub** (GitHub → Settings → Developer settings → OAuth Apps → New):
+   - Homepage URL: `https://TU-DOMINIO.vercel.app`
+   - Authorization callback URL: `https://TU-DOMINIO.vercel.app/api/auth/callback/github`
+5. **Variables de entorno** en Vercel (Settings → Environment Variables, entorno *Production*):
+
+   | Variable | Valor |
+   |---|---|
+   | `DATABASE_URL` | Cadena pooled de Neon |
+   | `BETTER_AUTH_SECRET` | Aleatorio: `openssl rand -base64 32` |
+   | `BETTER_AUTH_URL` | `https://TU-DOMINIO.vercel.app` |
+   | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Los de la OAuth App |
+   | `ALLOWED_EMAILS` | Tu email de GitHub (el principal o uno verificado) |
+
+6. **Redeploy** para que tome las variables y entra con GitHub.
+
+Notas: el login solo funciona en el dominio de `BETTER_AUTH_URL` (no en las URLs de preview).
+Tu progreso local (PGlite en `./.data`) no se migra a Neon: en producción empiezas de cero.
 
 ## Scripts
 

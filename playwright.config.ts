@@ -20,6 +20,6 @@ export default defineConfig({
     url: "http://localhost:3100",
     reuseExistingServer: false,
     timeout: 180_000,
-    env: { AUTH_MODE: "local", PGLITE_DIR: ".data/e2e" },
+    env: { AUTH_MODE: "local", PGLITE_DIR: "e2e" },
   },
 });
