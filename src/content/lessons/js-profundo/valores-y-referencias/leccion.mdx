@@ -1,0 +1,253 @@
+## Dos bugs con la misma causa
+
+El primero: añades una tarea y la lista no cambia en pantalla.
+
+```jsx
+function TodoList() {
+  const [todos, setTodos] = useState([]);
+
+  function handleAdd(text) {
+    todos.push({ id: crypto.randomUUID(), text });
+    setTodos(todos); // la tarea está en el array… pero no se repinta nada
+  }
+  // …
+}
+```
+
+El segundo: un efecto que debería ejecutarse solo cuando cambia la sala se ejecuta en **cada** render, y el chat se desconecta y reconecta cada vez que escribes una letra.
+
+```jsx
+function ChatRoom({ roomId }) {
+  const [message, setMessage] = useState("");
+  const options = { serverUrl: "https://localhost:1234", roomId };
+
+  useEffect(() => {
+    const connection = createConnection(options);
+    connection.connect();
+    return () => connection.disconnect();
+  }, [options]);
+  // <input value={message} onChange={(e) => setMessage(e.target.value)} />
+}
+```
+
+En el primero React "no ve" un cambio que sí ocurrió; en el segundo "ve" un cambio que no ocurrió. Las dos cosas salen de cómo JavaScript guarda y compara los objetos.
+
+## Primitivos se copian, objetos se comparten
+
+JavaScript tiene dos familias de valores:
+
+- **Primitivos**: `string`, `number`, `bigint`, `boolean`, `undefined`, `null` y `symbol`. Son inmutables: no hay forma de cambiar el número `3` o el string `"hola"`; solo puedes crear otro valor.
+- **Objetos**: todo lo demás, incluidos arrays, funciones, `Date`, `Map`… Son mutables: puedes cambiar su contenido.
+
+Cuando asignas una variable a otra, siempre se copia lo que contiene. Con un primitivo, lo que contiene es el valor mismo. Con un objeto, lo que contiene es una **referencia** (una especie de dirección) al objeto, y lo que se copia es esa referencia: las dos variables apuntan al **mismo** objeto.
+
+```js
+let a = 1;
+let b = a; // b recibe una copia del 1
+b = 2;
+a; // 1
+
+const x = { n: 1 };
+const y = x; // y recibe una copia de la referencia: mismo objeto
+y.n = 2;
+x.n; // 2
+```
+
+## Asignar no es mutar
+
+Hay dos operaciones que se parecen pero son muy distintas:
+
+- **Asignar** (`y = otraCosa`) cambia a qué apunta **una variable**. No afecta a nadie más.
+- **Mutar** (`y.n = 2`, `arr.push(4)`, `delete obj.k`) cambia el **objeto**. Lo ve cualquiera que tenga una referencia a él.
+
+```js
+const user = { name: "Ana" };
+const alias = user;
+
+alias.name = "Luis";      // mutación: user.name también es "Luis"
+let other = user;
+other = { name: "Eva" };  // asignación: user no se entera
+```
+
+Por eso `const` no hace inmutable un objeto: `const` impide **reasignar** la variable, no **mutar** el objeto al que apunta.
+
+## Paso de argumentos
+
+Pasar un argumento a una función es exactamente una asignación: el parámetro recibe una copia de lo que tenía la variable. Con un primitivo, la función no puede alterar la variable de fuera. Con un objeto, recibe una copia de la referencia: puede **mutar** el objeto compartido, pero si **reasigna** el parámetro solo cambia su variable local.
+
+Técnicamente JavaScript siempre pasa "por valor"; lo que ocurre es que, con objetos, ese valor es una referencia. Nunca puede hacer que la variable del que llama apunte a otra cosa.
+
+<Pregunta id="referencias-parametro-reasignado" />
+
+## Igualdad: por qué `{}` no es igual a `{}`
+
+`===` compara primitivos por valor, pero objetos por **identidad**: solo es `true` si las dos referencias apuntan al mismo objeto. Dos objetos creados por separado son distintos aunque tengan el mismo contenido:
+
+```js
+console.log({} === {});         // false: dos objetos distintos
+console.log([1, 2] === [1, 2]); // false
+const a = [1, 2];
+console.log(a === a);           // true
+```
+
+`Object.is` es igual que `===` salvo en dos casos de números: `Object.is(NaN, NaN)` es `true` y `Object.is(0, -0)` es `false`. Con objetos se comporta igual: compara identidad. No existe en el lenguaje una comparación de contenido incorporada; si la necesitas, la escribes tú (o comparas campos concretos).
+
+<Pregunta id="referencias-igualdad-objetos" />
+
+## De vuelta a React
+
+React compara con `Object.is` en dos sitios clave:
+
+1. **Al actualizar el estado.** Si `Object.is(anterior, nuevo)` es `true`, React asume que nada cambió y puede omitir el render.
+2. **En los arrays de dependencias** de `useEffect`, `useMemo` y `useCallback`: compara cada dependencia con la del render anterior.
+
+En el primer bug, `push` muta el array y `setTodos(todos)` pasa **la misma referencia**: para React no hay cambio.
+
+<Pregunta id="referencias-react-push" />
+
+```jsx
+setTodos([...todos, { id: crypto.randomUUID(), text }]); // array nuevo
+```
+
+En el segundo, `options` es un objeto literal: cada render ejecuta el cuerpo del componente y crea un objeto **nuevo**. Aunque su contenido sea idéntico, `Object.is(optionsAnterior, optionsNuevo)` es `false`, así que el efecto se repite. La solución es depender de primitivos y crear el objeto dentro del efecto:
+
+```jsx
+useEffect(() => {
+  const options = { serverUrl: "https://localhost:1234", roomId };
+  const connection = createConnection(options);
+  connection.connect();
+  return () => connection.disconnect();
+}, [roomId]); // un string: se compara por valor
+```
+
+<Callout type="clave">
+En React, "cambió" significa "es otra referencia". Por eso el estado se trata como inmutable: para cambiar algo creas un objeto o array nuevo, y para que algo no cuente como cambio, mantienes la misma referencia.
+</Callout>
+
+## Copia superficial vs copia profunda
+
+El spread (`...`), `Object.assign`, `Array.from` o `slice()` hacen una **copia superficial**: crean un contenedor nuevo, pero copian las propiedades tal cual. Si una propiedad es un objeto, se copia la **referencia**, así que el objeto anidado queda compartido.
+
+```js
+const state = { user: { name: "Ana" }, count: 0 };
+const copy = { ...state };
+
+copy.count = 1;          // no afecta a state: count es un primitivo propio de copy
+copy.user.name = "Luis"; // ¡sí afecta! copy.user y state.user son el mismo objeto
+```
+
+Una **copia profunda** duplica también todos los objetos anidados, de modo que la copia no comparte nada con el original.
+
+<Pregunta id="inmutabilidad-spread-anidado" />
+
+### structuredClone y sus límites
+
+`structuredClone(valor)` hace una copia profunda usando el algoritmo de clonado estructurado (el mismo que `postMessage`). Está disponible en navegadores modernos y en Node 17+.
+
+```js
+const original = { when: new Date(0), tags: new Map([["a", 1]]), list: [{ n: 1 }] };
+const clone = structuredClone(original);
+
+clone.list[0].n = 2;
+original.list[0].n;          // 1: no comparten nada
+clone.when instanceof Date;  // true: copia Date, Map, Set, arrays, objetos planos…
+```
+
+Sus límites:
+
+- **No clona funciones** (ni objetos que las contengan como valor) ni nodos del DOM: lanza un `DOMException` llamado `DataCloneError`.
+- **No conserva prototipos**: una instancia de una clase propia vuelve como objeto plano, sin sus métodos. Los getters se ejecutan y se copia su valor como propiedad normal (el getter/setter en sí se pierde), y se omiten las propiedades con clave de símbolo y las no enumerables.
+- Sí respeta referencias circulares y objetos repetidos.
+
+`JSON.parse(JSON.stringify(x))` es el truco antiguo y es peor: convierte `Date` en strings, pierde `undefined`, `Map` y `Set`, y falla con referencias circulares.
+
+En la práctica, con estado de React casi nunca necesitas una copia profunda: copiar todo es caro y además rompe las referencias de lo que no cambió. Lo que necesitas es copiar **solo el camino** hasta lo que cambia (lo verás más abajo).
+
+### Object.freeze es superficial
+
+`Object.freeze(obj)` impide añadir, quitar o reasignar propiedades **de ese objeto**. En modo estricto (los módulos ES y las clases lo son) intentarlo lanza `TypeError`; fuera de él falla en silencio. Pero solo actúa en el primer nivel: los objetos anidados siguen siendo mutables.
+
+<Pregunta id="inmutabilidad-freeze-superficial" />
+
+Para congelar en profundidad hay que recorrer el objeto y llamar a `Object.freeze` en cada nivel. Es útil en tests o en desarrollo para detectar mutaciones accidentales.
+
+## Métodos de array que mutan y los que no
+
+Este es el origen más común de mutaciones accidentales:
+
+| Mutan el array | Devuelven un array nuevo |
+|---|---|
+| `push`, `pop`, `shift`, `unshift` | `concat`, `[...arr, x]`, `slice` |
+| `splice` | `toSpliced` (ES2023), `filter` |
+| `sort` | `toSorted` (ES2023) |
+| `reverse` | `toReversed` (ES2023) |
+| `arr[i] = x`, `fill`, `copyWithin` | `with(i, x)` (ES2023), `map` |
+
+Ojo: `sort` y `reverse` **mutan y además devuelven** el mismo array, así que `const sorted = arr.sort()` parece inofensivo pero ha cambiado `arr`. Además, sin comparador, `sort` ordena como strings: `[10, 9, 1].sort()` da `[1, 10, 9]`.
+
+<Pregunta id="inmutabilidad-sort-muta" />
+
+## Patrones de actualización inmutable
+
+La regla: **copia cada objeto en el camino desde la raíz hasta lo que cambia; reutiliza todo lo demás**. Las partes que no cambian conservan su referencia (*structural sharing*), lo que hace la copia barata y permite que `memo`, `useMemo` o las dependencias de un efecto sepan que esas partes no cambiaron.
+
+```js
+// Objeto anidado: cambiar state.user.address.city
+const next = {
+  ...state,
+  user: {
+    ...state.user,
+    address: { ...state.user.address, city: "Quito" },
+  },
+};
+// next.settings === state.settings → true (no estaba en el camino)
+```
+
+Con arrays:
+
+```js
+[...todos, nueva];                                   // añadir al final
+[nueva, ...todos];                                   // añadir al principio
+todos.filter((t) => t.id !== id);                    // eliminar
+todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t)); // actualizar uno
+todos.toSpliced(index, 0, nueva);                    // insertar en una posición
+todos.with(index, reemplazo);                        // reemplazar por índice
+todos.toSorted((a, b) => a.text.localeCompare(b.text)); // ordenar
+```
+
+Fíjate en el `map`: copia solo la tarea que cambia (`{ ...t, done: !t.done }`) y devuelve las demás tal cual. Copiar el array con `[...todos]` y luego hacer `copia[0].done = true` sigue siendo una mutación: la tarea es el mismo objeto en ambos arrays.
+
+Cuando el anidamiento es profundo, librerías como Immer te dejan escribir código "mutante" sobre un borrador y generan la copia inmutable por ti. Pero por debajo hacen exactamente esto.
+
+<Callout type="cuidado">
+Errores comunes:
+
+- Creer que `const` hace inmutable un objeto: solo impide reasignar la variable.
+- Copiar con spread y luego mutar un objeto anidado: la copia superficial comparte los niveles inferiores.
+- Usar `sort`, `reverse` o `splice` sobre el estado (o sobre props): mutan el original. Usa `toSorted`, `toReversed` y `toSpliced`.
+- Comparar objetos o arrays con `===` esperando comparar su contenido.
+- Poner en las dependencias de un efecto un objeto o función creado durante el render: es nuevo en cada render.
+- Abusar de `structuredClone` para actualizar estado: copia todo, rompe el structural sharing y no admite funciones.
+</Callout>
+
+<Callout type="clave">
+- Una variable con un objeto guarda una **referencia**; asignar o pasar el objeto copia la referencia, no el objeto.
+- Mutar afecta a todos los que comparten la referencia; reasignar solo a una variable.
+- `===` y `Object.is` comparan objetos por identidad: `{}` nunca es igual a otro `{}`.
+- Actualizar de forma inmutable es copiar el camino hasta el cambio y reutilizar el resto.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="inmutabilidad-actualizar-anidado" />
+
+<Ejercicio id="inmutabilidad-reducer-tareas" />
+
+## Resumen
+
+- Los **primitivos** se copian y son inmutables; los **objetos** (incluidos arrays y funciones) se comparten por referencia.
+- **Asignar** cambia una variable; **mutar** cambia el objeto para todos los que lo referencian. Los argumentos se pasan como una asignación.
+- `===` y `Object.is` comparan objetos por **identidad**. React usa `Object.is` para el estado y las dependencias: un objeto mutado "no cambió" y un objeto recreado "siempre cambia".
+- El spread hace una **copia superficial**; `structuredClone` hace una profunda (con `Date`, `Map` o `Set`, pero sin funciones ni prototipos). `Object.freeze` solo congela el primer nivel.
+- `push`, `pop`, `splice`, `sort`, `reverse` y la asignación por índice mutan; `map`, `filter`, `concat`, `slice`, `toSorted`, `toReversed`, `toSpliced` y `with` devuelven arrays nuevos.
+- Para actualizar estado anidado, copia solo el camino hasta el cambio: lo que no cambia conserva su referencia.

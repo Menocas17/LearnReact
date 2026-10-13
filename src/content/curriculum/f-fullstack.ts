@@ -1,0 +1,112 @@
+import type { ModuleDef } from "../types";
+import { concept as c } from "./helpers";
+
+export const blockF: readonly ModuleDef[] = [
+  {
+    id: "m21",
+    number: 21,
+    slug: "nextjs",
+    block: "F",
+    title: "Next.js a fondo",
+    summary: "El modelo mental del App Router: servidor/cliente, datos, caché, streaming y Server Actions.",
+    concepts: [
+      c("next.app-router", "App Router", "Rutas por archivos, layouts, páginas y navegación.", ["routing.react-router", "react.composicion"]),
+      c("next.server-client", "Server y Client Components", "Dónde se ejecuta cada componente y la frontera 'use client'.", ["react.server-components", "next.app-router"]),
+      c("next.serializacion", "Qué cruza la frontera", "Props serializables y pasar Server Components como children.", ["next.server-client", "js.json"]),
+      c("next.data-fetching", "Datos en Server Components", "Obtener datos en el servidor sin useEffect.", ["next.server-client", "async.async-await"]),
+      c("next.streaming", "Streaming", "Suspense y loading.tsx para enviar la UI por partes.", ["next.data-fetching", "react.suspense"]),
+      c("next.server-actions", "Server Actions", "Mutaciones desde formularios y eventos.", ["next.server-client", "react.actions"]),
+      c("next.cache", "Caché y revalidación", "use cache, cacheLife, cacheTag y revalidación.", ["next.data-fetching"]),
+      c("next.prerender", "Prerender y contenido dinámico", "Static shell, APIs de runtime y Cache Components.", ["next.cache", "next.streaming"]),
+      c("next.route-handlers", "Route handlers", "Endpoints HTTP dentro de la app.", ["next.app-router", "web.http"]),
+      c("next.proxy", "Proxy", "Ejecutar lógica antes de la petición (antes middleware).", ["next.route-handlers"]),
+      c("next.metadata-seo", "Metadata y SEO", "Metadata, sitemaps e imágenes OG.", ["next.app-router"]),
+      c("next.optimizaciones", "Image, Font, Script y Link", "Optimización de recursos y prefetch.", ["next.app-router", "perf.imagenes-fuentes"]),
+      c("next.errores", "Errores y not-found", "error.tsx, not-found y manejo de errores por segmento.", ["next.app-router", "react.error-boundaries"]),
+      c("next.deploy", "Deploy", "Vercel, self-hosting y variables de entorno.", ["next.app-router", "tools.env"]),
+    ],
+    projects: [
+      {
+        id: "p21-devboard-next",
+        title: "DevBoard full-stack",
+        description: "Migra DevBoard a Next.js con Server Components, Server Actions y caché.",
+        concepts: ["next.server-client", "next.server-actions", "next.cache", "next.streaming"],
+      },
+    ],
+  },
+  {
+    id: "m22",
+    number: 22,
+    slug: "backend-esencial",
+    block: "F",
+    title: "Backend esencial",
+    summary: "APIs, Postgres, ORMs, autenticación, autorización y seguridad web.",
+    concepts: [
+      c("back.http-api", "Diseñar APIs", "Recursos, verbos, códigos de estado y validación.", ["web.http", "ts.zod"]),
+      c("back.postgres", "Bases de datos relacionales", "Tablas, relaciones, índices y SQL básico."),
+      c("back.orm", "ORMs", "Drizzle y Prisma; migraciones.", ["back.postgres", "ts.genericos"]),
+      c("back.auth", "Autenticación", "Sesiones, cookies, JWT y OAuth.", ["web.http", "dom.storage"]),
+      c("back.autorizacion", "Autorización", "Permisos y Data Access Layer.", ["back.auth", "next.server-actions"]),
+      c("back.seguridad", "Seguridad web", "XSS, CSRF, CORS, inyección y manejo de secretos.", ["back.auth", "dom.manipulacion"]),
+      c("back.baas", "BaaS", "Supabase y Firebase: cuándo convienen.", ["back.postgres", "back.auth"]),
+      c("back.hono", "Servidores ligeros", "APIs con Hono sobre Node o el edge.", ["back.http-api"]),
+    ],
+    projects: [
+      {
+        id: "p22-auth-db",
+        title: "DevBoard con usuarios",
+        description: "Postgres + Drizzle, login con GitHub y permisos por proyecto.",
+        concepts: ["back.orm", "back.auth", "back.autorizacion"],
+      },
+    ],
+  },
+  {
+    id: "m23",
+    number: 23,
+    slug: "otros-frameworks",
+    block: "F",
+    title: "Otros frameworks y cómo elegir",
+    summary: "React Router en modo framework, TanStack Start, SPA con Vite y React Native.",
+    concepts: [
+      c("fw.react-router-framework", "React Router (framework)", "SSR, loaders y actions en modo framework (antes Remix).", ["routing.loaders-actions"]),
+      c("fw.tanstack-start", "TanStack Start", "Server functions y SSR type-safe.", ["routing.tanstack-router", "query.prefetch-suspense"]),
+      c("fw.vite-spa", "SPA con Vite", "Cuándo no necesitas un framework full-stack.", ["tools.vite", "routing.react-router"]),
+      c("fw.elegir", "Elegir framework", "Renderizado, datos, despliegue y equipo como criterios.", ["fw.react-router-framework", "fw.tanstack-start", "next.prerender"]),
+      c("fw.react-native", "React Native (opcional)", "Apps móviles con Expo.", ["react.componentes-props", "react.useeffect"]),
+    ],
+    projects: [
+      {
+        id: "p23-comparativa",
+        title: "La misma feature en tres frameworks",
+        description: "Implementa una feature con Next.js, React Router y TanStack Start y documenta la comparación.",
+        concepts: ["fw.elegir", "fw.tanstack-start", "fw.react-router-framework"],
+      },
+    ],
+  },
+  {
+    id: "m24",
+    number: 24,
+    slug: "ingenieria-profesional",
+    block: "F",
+    title: "Ingeniería profesional",
+    summary: "Arquitectura, monorepos, CI/CD, observabilidad, i18n, code review y entrevistas.",
+    concepts: [
+      c("eng.arquitectura", "Arquitectura frontend", "Organización por features y límites entre módulos.", ["react.custom-hooks", "js.modulos"]),
+      c("eng.monorepos", "Monorepos", "pnpm workspaces y Turborepo.", ["tools.node-npm"]),
+      c("eng.cicd", "CI/CD", "Checks, previews y despliegues automáticos.", ["tools.ci", "next.deploy"]),
+      c("eng.observabilidad", "Observabilidad", "Errores, logs y analítica en producción.", ["next.deploy"]),
+      c("eng.i18n", "Internacionalización", "Traducciones, formatos y rutas por idioma.", ["js.fechas-intl", "next.app-router"]),
+      c("eng.feature-flags", "Feature flags", "Lanzar de forma gradual y segura.", ["eng.cicd"]),
+      c("eng.code-review", "Code review", "Dar y recibir revisiones útiles; PRs pequeños.", ["tools.github"]),
+      c("eng.entrevistas", "Entrevistas técnicas", "Live coding, diseño de frontend y preguntas de comportamiento.", ["eng.arquitectura"]),
+    ],
+    projects: [
+      {
+        id: "p24-produccion",
+        title: "DevBoard en producción",
+        description: "CI/CD con previews, Sentry, feature flags e i18n.",
+        concepts: ["eng.cicd", "eng.observabilidad", "eng.feature-flags"],
+      },
+    ],
+  },
+];
