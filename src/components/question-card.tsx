@@ -6,6 +6,25 @@ import type { AnswerResult, PublicQuestion } from "@/lib/questions/public";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 
+/** Si el servidor no responde en este tiempo, se avisa y se permite reintentar. */
+const ANSWER_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error("timeout")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(id);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(id);
+        reject(error);
+      },
+    );
+  });
+}
+
 type Props = {
   question: PublicQuestion;
   answer: (input: AnswerInput) => Promise<AnswerResult>;
@@ -27,11 +46,18 @@ export function QuestionCard({ question, answer, initial, onAnswered, footer }: 
     setError(null);
     startTransition(async () => {
       try {
-        const r = await answer({ questionId: question.id, optionId: selected, confident });
+        const r = await withTimeout(
+          answer({ questionId: question.id, optionId: selected, confident }),
+          ANSWER_TIMEOUT_MS,
+        );
         setResult(r);
         onAnswered?.(r, selected);
-      } catch {
-        setError("No se pudo guardar la respuesta. Inténtalo de nuevo.");
+      } catch (e) {
+        setError(
+          e instanceof Error && e.message === "timeout"
+            ? "El servidor no respondió al guardar la respuesta. Revisa que la app siga corriendo y vuelve a intentarlo."
+            : "No se pudo guardar la respuesta. Inténtalo de nuevo.",
+        );
       }
     });
   }
@@ -91,7 +117,16 @@ export function QuestionCard({ question, answer, initial, onAnswered, footer }: 
           </Button>
         </div>
       )}
-      {error && <p className="text-sm text-hueco">{error}</p>}
+      {pending && (
+        <p className="text-sm text-muted" aria-live="polite">
+          Guardando respuesta…
+        </p>
+      )}
+      {error && (
+        <p className="text-sm text-hueco" role="alert">
+          {error}
+        </p>
+      )}
 
       {result && (
         <div
