@@ -15,6 +15,7 @@ const nav = [
   { href: "/", label: "Inicio" },
   { href: "/diagnostico", label: "Diagnóstico" },
   { href: "/mapa", label: "Mapa" },
+  { href: "/progreso", label: "Progreso" },
 ];
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
