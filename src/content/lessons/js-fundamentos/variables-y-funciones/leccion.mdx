@@ -1,0 +1,197 @@
+## Dos bugs que ya has visto
+
+Esta lista no pinta nada, y no hay ningún error en consola:
+
+```jsx
+function TodoList({ items, onDelete }) {
+  return (
+    <ul>
+      {items.map((item) => {
+        <TodoItem key={item.id} item={item} />;
+      })}
+    </ul>
+  );
+}
+```
+
+Y en este botón, el elemento se borra **al renderizar** la lista, sin que nadie haga click (o React se queja de demasiados renders si `handleDelete` cambia estado):
+
+```jsx
+<button onClick={handleDelete(item.id)}>Borrar</button>
+```
+
+Ninguno de los dos es un problema de React. El primero es la regla del **return** en las arrow functions; el segundo, la diferencia entre **una función** y **el resultado de llamarla**. Antes de llegar ahí, repasemos rápido las variables, porque hay un detalle de `const` que también causa bugs de React.
+
+## let, const y var
+
+- `const`: la variable no se puede **reasignar**. Es la opción por defecto.
+- `let`: se puede reasignar. Úsala cuando de verdad cambia (un acumulador, un índice).
+- `var`: la forma antigua. Su alcance es la función entera en lugar del bloque y tiene rarezas de hoisting. En código moderno no se usa.
+
+`let` y `const` tienen **alcance de bloque**: solo existen dentro de las llaves donde se declaran (un `if`, un `for`, una función). El detalle de scope, hoisting y por qué usarlas antes de declararlas lanza un error está en la lección de scope y hoisting del módulo 3.
+
+### Reasignar no es mutar
+
+`const` protege la **variable** (a qué valor apunta), no el **valor**. Si el valor es un objeto o un array, puedes cambiar su contenido:
+
+```js
+const user = { name: "Ana" };
+user.name = "Luis";   // ✅ muta el objeto: const no lo impide
+user = { name: "Eva" }; // ❌ TypeError: Assignment to constant variable.
+```
+
+<Pregunta id="variables-const-mutar" />
+
+Esto importa en React por partida doble. Primero, porque explica por qué casi todo es `const` en un componente: cada render es una llamada nueva a la función, y `const [count, setCount] = useState(0)` crea variables nuevas cada vez. Nunca reasignas `count`; pides a React un render nuevo con `setCount`. Segundo, porque `const` **no te protege** del bug clásico:
+
+```jsx
+const [todos, setTodos] = useState([]);
+
+function add(todo) {
+  todos.push(todo); // muta el array del estado: const no se queja
+  setTodos(todos);  // mismo array → React cree que no cambió nada
+}
+```
+
+La solución es crear un array nuevo (`setTodos([...todos, todo])`); lo verás a fondo en valores vs referencias e inmutabilidad.
+
+<Callout type="nota">
+Para congelar el contenido de verdad existe `Object.freeze`, pero es superficial y en la práctica casi no se usa: la convención en React es simplemente no mutar.
+</Callout>
+
+## Tres formas de crear una función
+
+```js
+// Declaración: tiene nombre y se puede usar antes de la línea donde aparece
+function add(a, b) {
+  return a + b;
+}
+
+// Expresión: una función como valor asignado a una variable
+const sub = function (a, b) {
+  return a - b;
+};
+
+// Arrow function: expresión más corta
+const mul = (a, b) => a * b;
+```
+
+Las diferencias que importan en el día a día:
+
+- Las **declaraciones** se pueden llamar antes de su línea (hoisting). Las expresiones y arrows no: son una `const` como cualquier otra.
+- Las **arrow functions** no tienen `this` ni `arguments` propios: usan los del scope donde se escribieron. Por eso son las cómodas para callbacks. El detalle de `this` está en su propia lección del módulo 3.
+- Las arrows no se pueden usar con `new`.
+
+En componentes de React verás las dos convenciones (`function Button()` y `const Button = () =>`); para lo que hace React son equivalentes.
+
+## Return implícito y la trampa del objeto
+
+Una arrow tiene dos formas de cuerpo:
+
+```js
+const double = (n) => n * 2;          // cuerpo de expresión: devuelve n * 2
+const double2 = (n) => { n * 2; };    // cuerpo de bloque: evalúa y DESCARTA → undefined
+const double3 = (n) => { return n * 2; }; // bloque con return explícito
+```
+
+La regla: **si después de `=>` hay una llave, es un bloque**, y un bloque solo devuelve algo con `return`. Una función sin `return` (o con `return;` a secas) devuelve `undefined`.
+
+Ese es el primer bug del inicio: el callback del `map` tiene llaves y no tiene `return`, así que `map` devuelve `[undefined, undefined, …]` y React no pinta nada (`undefined` en una lista se ignora sin error). Arreglos posibles:
+
+```jsx
+{items.map((item) => <TodoItem key={item.id} item={item} />)}   // return implícito
+{items.map((item) => (
+  <TodoItem key={item.id} item={item} />                          // paréntesis para varias líneas
+))}
+{items.map((item) => {
+  const done = item.status === "done";
+  return <TodoItem key={item.id} item={item} done={done} />;      // bloque + return
+})}
+```
+
+La misma regla produce la trampa del objeto literal: `() => { a: 1 }` **no** devuelve un objeto. Las llaves abren un bloque, `a:` se interpreta como una etiqueta (*label*, una sintaxis casi olvidada de JavaScript) y `1` es una expresión que se descarta. Para devolver un objeto con return implícito, envuélvelo en paréntesis: `() => ({ a: 1 })`.
+
+<Pregunta id="funciones-arrow-objeto" />
+
+<Callout type="cuidado">
+`() => { a: 1, b: 2 }` ni siquiera compila: lanza un `SyntaxError`, porque `b: 2` no es válido como expresión. Si ves un error raro en una arrow que devuelve un objeto, busca los paréntesis que faltan. Típico en reducers, `setState((prev) => ({ ...prev, x }))` y `map` que transforma a objetos.
+</Callout>
+
+## Parámetros por defecto
+
+```js
+function createUser(name, role = "viewer") {
+  return { name, role };
+}
+```
+
+Dos reglas que no son obvias:
+
+1. **Solo se aplican con `undefined`.** Omitir el argumento o pasar `undefined` activan el valor por defecto; `null`, `0`, `""` o `false` son valores reales y se respetan. Esto muerde con APIs que devuelven `null` para "sin valor": `createUser("Ana", null)` crea un usuario con `role: null`.
+2. **Se evalúan en cada llamada**, en el momento de la llamada. `list = []` crea un array nuevo cada vez (al contrario que en Python, donde el valor por defecto se comparte), y `id = nextId()` llama a `nextId` solo cuando hace falta. Pueden incluso usar parámetros anteriores: `function range(start, end = start + 10)`.
+
+<Pregunta id="funciones-default-null" />
+
+<Pregunta id="funciones-default-por-llamada" />
+
+Ojo con el matiz: el valor por defecto es nuevo en cada llamada **si es una expresión que crea algo** (`[]`, `{}`). Si el valor por defecto es una variable que apunta a un array existente (`tags = DEFAULT_TAGS`), todas las llamadas reciben **ese mismo** array, y mutarlo lo cambia para todas. Lo arreglarás en el primer ejercicio.
+
+## Rest params y arguments
+
+`...nombre` como último parámetro recoge los argumentos restantes en un **array de verdad**:
+
+```js
+function log(level, ...messages) {
+  console.log("[" + level + "]", messages.join(" "));
+}
+log("info", "servidor", "listo"); // [info] servidor listo
+```
+
+Antes existía `arguments`, un objeto *parecido* a un array (tiene `length` e índices, pero no `map` ni `reduce`) que solo existe en funciones normales. En código moderno usa siempre rest params: son explícitos, son un array y funcionan en arrows.
+
+<Pregunta id="funciones-rest-arguments" />
+
+## Las funciones son valores
+
+Una función es un valor como un número o un objeto: puedes guardarla en una variable o en una propiedad, pasarla como argumento y devolverla desde otra función.
+
+```js
+const handlers = { save: () => "guardado" };     // guardada en un objeto
+[3, 1, 2].sort((a, b) => a - b);                  // pasada como argumento
+const greet = (greeting) => (name) => greeting + ", " + name; // devuelta
+greet("Hola")("Ana"); // "Hola, Ana"
+```
+
+(Que `greet("Hola")` recuerde `greeting` después de terminar es un closure; lo tienes en el módulo 3.)
+
+La distinción clave es entre **la función** y **llamarla**:
+
+- `handleClick` es la función, un valor que todavía no ha hecho nada.
+- `handleClick()` la **ejecuta ahora** y vale lo que devuelva.
+
+En JSX, lo que va entre llaves se evalúa durante el render. `onClick={handleClick}` le da a React la función para que la llame cuando haya un click. `onClick={handleClick()}` la ejecuta en cada render y le pasa a React el resultado (normalmente `undefined`). Ese es el segundo bug del inicio. Si necesitas pasar argumentos, envuélvela en otra función: `onClick={() => handleDelete(item.id)}`.
+
+<Pregunta id="funciones-handler-referencia" />
+
+<Callout type="clave">
+Pregúntate siempre: ¿quiero **la función** o **su resultado**? Props como `onClick`, `onChange`, el callback de `useEffect` o el de `map` esperan una función. Si ves paréntesis de llamada ahí sin una arrow alrededor, casi seguro es un bug.
+</Callout>
+
+## Funciones puras, en una frase
+
+Una función es **pura** si con los mismos argumentos devuelve siempre lo mismo y no cambia nada fuera de ella (no muta sus argumentos, no escribe variables externas, no hace peticiones). React espera que tus componentes se comporten así durante el render; por eso `todos.push(...)` dentro de un componente es un problema y `createTask` del ejercicio no debe mutar el array que recibe. El tema completo, con sus reglas y por qué React depende de ellas, está en el módulo 6.
+
+## Práctica
+
+<Ejercicio id="funciones-utilidades-rotas" />
+
+<Ejercicio id="funciones-formatter-pipe" />
+
+## Resumen
+
+- Usa `const` por defecto y `let` cuando la variable se reasigna; `var` no. Ambas tienen alcance de bloque.
+- `const` impide **reasignar**, no **mutar**: `push` sobre un array `const` funciona (y en el estado de React es un bug).
+- Tras `=>`, una llave abre un **bloque**: sin `return` devuelve `undefined`. Para devolver un objeto: `() => ({ a: 1 })`.
+- Los parámetros por defecto solo se aplican con `undefined` (no con `null`) y se evalúan en cada llamada.
+- Los rest params (`...args`) son un array real; `arguments` no lo es y las arrows no lo tienen.
+- Las funciones son valores: `handleClick` es la función, `handleClick()` es su resultado. A `onClick` pásale la función.
