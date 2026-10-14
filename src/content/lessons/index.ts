@@ -1,4 +1,11 @@
 import type { ExerciseDef, LessonDef, Question } from "../types";
+import { tiposYCoercion } from "./js-fundamentos/tipos-y-coercion/leccion";
+import { cortocircuitoYControl } from "./js-fundamentos/cortocircuito-y-control/leccion";
+import { variablesYFunciones } from "./js-fundamentos/variables-y-funciones/leccion";
+import { stringsNumerosFechas } from "./js-fundamentos/strings-numeros-fechas/leccion";
+import { objetosArraysJson } from "./js-fundamentos/objetos-arrays-json/leccion";
+import { metodosDeArray } from "./js-fundamentos/metodos-de-array/leccion";
+import { destructuringYSpread } from "./js-fundamentos/destructuring-y-spread/leccion";
 import { closures } from "./js-profundo/closures/leccion";
 import { scopeYHoisting } from "./js-profundo/scope-y-hoisting/leccion";
 import { valoresYReferencias } from "./js-profundo/valores-y-referencias/leccion";
@@ -12,6 +19,13 @@ import { modulosYErrores } from "./js-profundo/modulos-y-errores/leccion";
  * src/content/lessons/<slug-del-módulo>/<slug>/ con leccion.mdx + leccion.ts.
  */
 export const lessons: readonly LessonDef[] = [
+  tiposYCoercion,
+  cortocircuitoYControl,
+  variablesYFunciones,
+  stringsNumerosFechas,
+  objetosArraysJson,
+  metodosDeArray,
+  destructuringYSpread,
   scopeYHoisting,
   closures,
   valoresYReferencias,

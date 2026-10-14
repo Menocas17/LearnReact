@@ -13,7 +13,7 @@ import { lessons, publishedModules } from "../src/content/lessons";
 import { lessonIdsWithContent } from "./lib/mdx-registry";
 import type { Question } from "../src/content/types";
 import { checkGraph, checkQuestion, checkSections, type Problem } from "./lib/checks";
-import { exerciseTestsPass } from "./lib/run-exercise";
+import { runExerciseVariants } from "./lib/run-exercise";
 import { normalizeOutput, runSnippet } from "./lib/run-snippet";
 
 const problems: Problem[] = [];
@@ -89,18 +89,17 @@ for (const lesson of lessons) {
     for (const c of ex.concepts) if (!conceptIds.has(c)) problems.push(`Ejercicio ${ex.id}: concepto inexistente ${c}`);
   }
 }
-await Promise.all(
-  lessons.flatMap((l) =>
-    l.exercises.map(async (ex) => {
-      const [solutionOk, starterOk] = await Promise.all([
-        exerciseTestsPass(`${ex.id}-solucion`, ex.solution, ex.tests),
-        exerciseTestsPass(`${ex.id}-inicial`, ex.starter, ex.tests),
-      ]);
-      if (!solutionOk) problems.push(`Ejercicio ${ex.id}: la solución no pasa los tests`);
-      if (starterOk) problems.push(`Ejercicio ${ex.id}: el código inicial ya pasa los tests`);
-    }),
-  ),
+const allExercises = lessons.flatMap((l) => l.exercises);
+const results = await runExerciseVariants(
+  allExercises.flatMap((ex) => [
+    { key: `${ex.id}--solucion`, files: ex.solution, tests: ex.tests },
+    { key: `${ex.id}--inicial`, files: ex.starter, tests: ex.tests },
+  ]),
 );
+for (const ex of allExercises) {
+  if (!results.get(`${ex.id}--solucion`)) problems.push(`Ejercicio ${ex.id}: la solución no pasa los tests`);
+  if (results.get(`${ex.id}--inicial`)) problems.push(`Ejercicio ${ex.id}: el código inicial ya pasa los tests`);
+}
 console.log(`  ${lessons.length} lecciones, ${exerciseIds.size} ejercicios verificados`);
 
 // 5. Cobertura de módulos publicados -------------------------------------------
