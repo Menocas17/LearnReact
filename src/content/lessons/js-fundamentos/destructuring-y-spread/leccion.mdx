@@ -1,0 +1,217 @@
+## El bug
+
+Tienes un botón reutilizable:
+
+```jsx
+function Button({ variant = "primary", ...props }) {
+  return <button {...props} className={"btn btn-" + variant} />;
+}
+
+// En otro sitio:
+<Button className="w-full" onClick={save}>Guardar</Button>
+```
+
+El botón sale con sus estilos, pero **no ocupa todo el ancho**: el `className="w-full"` del padre ha desaparecido. Si alguien "lo arregla" moviendo `{...props}` al final, pasa lo contrario: ahora el `w-full` está, pero se pierden `btn btn-primary`. Y mientras tanto, en el mismo archivo escribes `const [open, setOpen] = useState(false)` sin pensar qué hace esa línea.
+
+Todo esto es JavaScript puro: **destructuring**, **rest** y **spread**. Ya los usas a diario; esta lección va a por las reglas exactas que deciden cuándo funcionan y cuándo no.
+
+## Destructuring de objetos
+
+Extrae propiedades por **nombre** a variables:
+
+```js
+const user = { id: 7, name: "Ana", address: { city: "Lima" } };
+
+const { name, id: userId, role = "user" } = user;
+// name = "Ana", userId = 7 (renombrado), role = "user" (por defecto)
+```
+
+- `id: userId` se lee "la propiedad `id`, guárdala en `userId`". No existe ninguna variable `id`.
+- `role = "user"` es un valor por defecto.
+- Se pueden combinar: `{ id: userId = 0 }`.
+
+### Los valores por defecto solo saltan con `undefined`
+
+Esta es la trampa principal. El valor por defecto se usa cuando la propiedad no existe **o vale exactamente `undefined`**. `null`, `0`, `""` y `false` son valores reales y se respetan.
+
+<Pregunta id="destructuring-default-null" />
+
+En React esto aparece cuando una API devuelve `null` para "sin valor": `function Avatar({ size = 40 })` recibirá `size === null` si el padre pasa `size={null}`, y tu cálculo `size * 2` dará `0`. Si necesitas tratar `null` como ausente, usa `??` en el cuerpo: `const s = size ?? 40`.
+
+Otro detalle: la expresión del valor por defecto se evalúa **solo si hace falta**, así que `{ onClose = () => {} }` no crea una función nueva cuando el padre ya pasó una.
+
+### Destructuring anidado
+
+```js
+const { address: { city } } = user; // city = "Lima"
+```
+
+Ojo: aquí `address` **no** es una variable, es solo el camino. Si quieres ambas, escribe `const { address, address: { city } } = user`.
+
+El problema es que el destructuring anidado accede a la propiedad del nivel intermedio sin preguntar. Si ese nivel es `undefined` o `null`, lanza `TypeError`. Un `= {}` en el nivel intermedio protege de `undefined`… pero no de `null`:
+
+<Pregunta id="destructuring-anidado-null" />
+
+<Callout type="cuidado">
+Con datos que vienen de una API (donde `null` es habitual), el destructuring anidado es frágil. Extrae el nivel intermedio y usa encadenamiento opcional: `const city = data?.user?.address?.city ?? "—"`.
+</Callout>
+
+### Destructuring en parámetros: así son las props
+
+La firma `function Card({ title, onClose = () => {} })` no es sintaxis de React: es destructuring del **primer parámetro**. React llama a `Card(props)` con un objeto y JavaScript lo desestructura antes de ejecutar el cuerpo.
+
+```jsx
+function Card({ title, onClose = () => {} }) {
+  return (
+    <section>
+      <h2>{title}</h2>
+      <button onClick={onClose}>Cerrar</button>
+    </section>
+  );
+}
+```
+
+React siempre pasa un objeto de props (aunque esté vacío), así que en componentes no hace falta más. Pero en funciones normales, hooks propios o utilidades que reciben un objeto de opciones, olvidarlo rompe la llamada sin argumentos:
+
+```js
+function connect({ retries = 3 }) {}
+connect(); // TypeError: Cannot read properties of undefined (reading 'retries')
+
+function connectSafe({ retries = 3 } = {}) {}
+connectSafe(); // bien: el parámetro vale {} y luego retries = 3
+```
+
+Son **dos** valores por defecto distintos: `= {}` es el del parámetro entero; `retries = 3` es el de la propiedad.
+
+<Callout type="nota">
+Asignar con destructuring a variables ya declaradas exige paréntesis: `({ a, b } = obj);`. Sin ellos, la `{` al principio de la línea se interpreta como un bloque y da `SyntaxError`.
+</Callout>
+
+## Destructuring de arrays y `useState`
+
+En arrays se extrae por **posición**, así que los nombres los eliges tú:
+
+```js
+const [first, , third = 0] = [10, 20];   // first = 10, third = 0 (posición 2 vacía)
+let a = 1;
+let b = 2;
+[a, b] = [b, a];                          // intercambio sin variable temporal
+```
+
+- Las comas sin nombre (`, ,`) saltan posiciones.
+- Funciona con cualquier iterable: `const [x, y] = "hi"` o `const [first] = new Set(lista)`.
+- Si una línea empieza por `[` y la anterior no termina en `;`, JavaScript las une (`b = 2[a, b] = …`). En el intercambio, asegúrate de que la línea anterior termina en punto y coma.
+
+Por esto `useState` devuelve un **array** y no un objeto: con arrays puedes llamar a las variables como quieras (`[open, setOpen]`, `[query, setQuery]`) sin renombrar. `const [value, setValue] = useState(0)` es literalmente "dame la posición 0 y la posición 1 del array que devuelve `useState`". Y como es una copia del valor en una `const` nueva, llamar al setter no la cambia:
+
+<Pregunta id="destructuring-usestate-copia" />
+
+## Spread: expandir
+
+Los `...` delante de un valor lo **expanden** en el sitio donde aparecen. Hay tres contextos:
+
+```js
+const nums = [1, 2, 3];
+const more = [0, ...nums, 4];            // en arrays: [0, 1, 2, 3, 4]
+const letters = [..."hola"];             // cualquier iterable: ["h", "o", "l", "a"]
+const unique = [...new Set([1, 1, 2])];  // [1, 2]
+
+const base = { a: 1, b: 2 };
+const copy = { ...base, c: 3 };          // en objetos: { a: 1, b: 2, c: 3 }
+
+Math.max(...nums);                       // en llamadas: Math.max(1, 2, 3)
+```
+
+Aunque se escriban igual, el spread de **arrays y llamadas** usa el protocolo de iteración (el mismo que `for...of`), mientras que el de **objetos** copia las propiedades propias enumerables. Esa diferencia explica la siguiente trampa.
+
+### Orden: la última clave gana
+
+Un objeto literal se construye de izquierda a derecha. Si una clave aparece dos veces (sea escrita a mano o traída por spread), **el último valor pisa al anterior**:
+
+```js
+const config = { ...defaults, ...options };   // options gana: lo habitual
+const config2 = { ...options, ...defaults };  // defaults gana: casi siempre un bug
+```
+
+Eso es exactamente lo que pasaba con el `Button`. JSX convierte `<button {...props} className={…} />` en un objeto de props donde se aplica la misma regla:
+
+<Pregunta id="spread-orden-props" />
+
+La solución no es elegir un orden, sino **extraer** `className` y combinarlo:
+
+```jsx
+function Button({ variant = "primary", className = "", ...props }) {
+  return <button {...props} className={`btn btn-${variant} ${className}`.trim()} />;
+}
+```
+
+<Callout type="cuidado">
+`{ ...defaults, ...options }` tiene otra trampa: si `options` trae una clave con valor `undefined` (por ejemplo, de un formulario o de `{ size: props.size }`), **esa `undefined` también se copia** y pisa el valor por defecto. El spread copia claves, no "valores con sentido". El primer ejercicio va de esto.
+</Callout>
+
+### `null` y `undefined`: objeto sí, array no
+
+<Pregunta id="spread-null-objeto-array" />
+
+Esto hace que `{ ...(cond && { extra: 1 }) }` funcione (si `cond` es `false`, se expande un booleano, que no tiene propiedades propias, y no pasa nada), mientras que `[...maybeList]` revienta cuando `maybeList` es `null`. En arrays, protege con `[...(maybeList ?? [])]`.
+
+### Spread es una copia superficial
+
+`{ ...obj }` y `[...arr]` crean un objeto o array **nuevo** en el primer nivel, pero los objetos anidados se comparten por referencia. Lo verás a fondo en **Valores y referencias** (módulo 3): es la razón por la que actualizar estado anidado exige un spread por cada nivel que cambias, `{ ...user, address: { ...user.address, city } }`.
+
+### Spread en llamadas y arrays enormes
+
+`Math.max(...arr)` pasa cada elemento como un argumento separado, y los motores tienen un límite de argumentos por llamada. Con arrays de cientos de miles de elementos puede lanzar `RangeError` (el límite exacto depende del motor). Para datos grandes usa un bucle o `arr.reduce((max, n) => Math.max(max, n), -Infinity)`. Además, `Math.max()` sin argumentos devuelve `-Infinity`, así que `Math.max(...[])` también.
+
+## Rest: recoger lo que sobra
+
+Los mismos `...` en una posición donde se **declara** (destructuring o parámetros) hacen lo contrario: recogen.
+
+```js
+const { id, onClose, ...rest } = props;   // rest: objeto con el resto de props
+const [head, ...tail] = [1, 2, 3];        // tail: [2, 3]
+function log(level, ...messages) {}       // messages: array real con los argumentos sobrantes
+```
+
+- El rest va **siempre al final**; `const { ...rest, id } = props` es `SyntaxError`.
+- El rest de objetos copia solo las propiedades propias enumerables y, como el spread, es superficial.
+- Los parámetros rest son un `Array` de verdad (con `map`, `filter`…), a diferencia del viejo `arguments`.
+
+El patrón de componentes envolventes combina las dos caras: rest para **separar** las props que el componente consume y spread para **pasar** el resto al elemento del DOM.
+
+```jsx
+function TextField({ label, error, ...inputProps }) {
+  return (
+    <label>
+      {label}
+      <input {...inputProps} aria-invalid={Boolean(error)} />
+      {error && <span>{error}</span>}
+    </label>
+  );
+}
+```
+
+Así `label` y `error` no llegan al `<input>` (acabarían como atributos sin sentido en el HTML) y todo lo demás (`value`, `onChange`, `placeholder`, `aria-*`) pasa sin que tengas que enumerarlo.
+
+<Pregunta id="spread-rest-params" />
+
+<Callout type="clave">
+`...` expande cuando **lee** un valor (spread) y recoge cuando está en el lado izquierdo de un destructuring o en los parámetros (rest). Rest para separar, spread para combinar, y en un objeto literal siempre gana la última clave.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="spread-merge-config" />
+
+<Ejercicio id="destructuring-split-props" />
+
+## Resumen
+
+- El destructuring de objetos extrae por **nombre** (con `nombre: otro` para renombrar); el de arrays, por **posición**, por eso `useState` devuelve un array.
+- Los valores por defecto solo se aplican con `undefined`, nunca con `null`.
+- El destructuring anidado lanza `TypeError` si el nivel intermedio es `null` o `undefined`; `= {}` solo cubre `undefined`.
+- En parámetros, `({ a = 1 } = {})` tiene dos defaults: el del objeto entero y el de cada propiedad.
+- Spread expande arrays, iterables y objetos; en objetos **gana la última clave**, incluida una `undefined`.
+- `{ ...null }` no hace nada; `[...null]` lanza `TypeError`.
+- Spread y rest hacen copias **superficiales**.
+- Rest recoge lo que sobra: `const { id, ...rest } = props` y `function f(...args)`; va siempre al final.

@@ -1,0 +1,236 @@
+## El bug
+
+Un carrito con un input de cantidad y un botón "+":
+
+```jsx
+function Cantidad() {
+  const [cantidad, setCantidad] = useState(1);
+
+  return (
+    <>
+      <input
+        type="number"
+        value={cantidad}
+        onChange={(e) => setCantidad(e.target.value)}
+      />
+      <button onClick={() => setCantidad(cantidad + 1)}>+</button>
+    </>
+  );
+}
+```
+
+Al cargar, "+" funciona: 1, 2, 3. Pero si escribes un `2` en el input y luego pulsas "+", aparece **21**. Y si pulsas otra vez, **211**.
+
+`e.target.value` es **siempre un string**, aunque el input sea `type="number"`. Después de escribir, `cantidad` vale `"2"` y `"2" + 1` concatena. Nadie lanzó un error: JavaScript convirtió el `1` a string porque así lo dice la especificación.
+
+Otro clásico de la misma familia:
+
+```js
+if (user.age) {
+  mostrarEdad(user.age);
+} else {
+  pedirEdad(); // se ejecuta para un bebé de 0 años
+}
+```
+
+Los dos bugs vienen de lo mismo: no saber **qué tipo** tiene un valor y **qué conversión** aplica cada operador. Esta lección cubre las tres piezas: tipos, operadores y coerción.
+
+## Los tipos: 7 primitivos y objetos
+
+JavaScript tiene **7 tipos primitivos** y todo lo demás es un **objeto**:
+
+| Tipo | Ejemplos | `typeof` |
+|---|---|---|
+| `undefined` | `undefined` | `"undefined"` |
+| `null` | `null` | `"object"` (!) |
+| `boolean` | `true`, `false` | `"boolean"` |
+| `number` | `42`, `3.14`, `-0`, `NaN`, `Infinity` | `"number"` |
+| `bigint` | `10n` | `"bigint"` |
+| `string` | `"hola"` | `"string"` |
+| `symbol` | `Symbol("id")` | `"symbol"` |
+| objeto | `{}`, `[]`, `new Date()`, `/re/` | `"object"` |
+| función (es un objeto) | `() => {}`, `class {}` | `"function"` |
+
+Las rarezas de `typeof` que tienes que tener presentes:
+
+- `typeof null === "object"`: un error de la primera implementación que ya no se puede corregir sin romper la web. Para `null` compara directamente: `value === null`.
+- Los arrays, fechas y demás son `"object"`. Usa `Array.isArray(x)` o `x instanceof Date`.
+- Las funciones son objetos, pero `typeof` les da su propia etiqueta: `"function"` (también a las clases).
+- `NaN` ("Not a Number") es de tipo `number`. Es el resultado de una operación numérica que falló, no un tipo aparte.
+- `typeof variableNoDeclarada` devuelve `"undefined"` sin lanzar error (pero una variable `let` en su zona muerta temporal sí lanza).
+
+### Los primitivos son inmutables
+
+Ningún método de un primitivo lo cambia: siempre devuelven un valor nuevo. `nombre.toUpperCase()` no modifica `nombre`; `cantidad + 1` no modifica `cantidad`. Lo único que puede cambiar es a qué valor apunta una variable.
+
+<Pregunta id="tipos-string-inmutable" />
+
+Esto es la base de por qué React funciona como funciona: si el estado es un primitivo, "cambiarlo" siempre significa reemplazarlo con `setState`.
+
+### Wrappers: por qué `"hola".length` funciona
+
+Si los primitivos no son objetos, ¿cómo tienen métodos? Al acceder a una propiedad, JavaScript envuelve el primitivo en un objeto temporal (`String`, `Number`, `Boolean`, `BigInt`, `Symbol`), llama al método y lo descarta.
+
+Llamados **sin** `new`, `String(x)`, `Number(x)` y `Boolean(x)` son conversiones y devuelven primitivos: son la forma recomendada de convertir explícitamente. Con `new` crean objetos, que casi nunca quieres:
+
+```js
+typeof Number("5");     // "number"
+typeof new Number(5);   // "object"
+new Boolean(false) ? "sí" : "no"; // "sí": un objeto siempre es truthy
+```
+
+## Operadores
+
+Damos por hecho que conoces los aritméticos y los de comparación; aquí van los detalles que causan bugs.
+
+### Aritméticos
+
+- `/` nunca lanza: `1 / 0` es `Infinity` y `0 / 0` es `NaN`.
+- `%` es el **resto**, no el módulo: conserva el signo del dividendo (`-7 % 3` es `-1`). Para un índice circular usa `((i % n) + n) % n`.
+- `**` es la potencia y es **asociativo por la derecha**: `2 ** 3 ** 2` es `2 ** 9`. Además, `-2 ** 2` es un `SyntaxError`: hay que escribir `(-2) ** 2`.
+- El `+` unario convierte a número: `+"42"` es `42`, `+""` es `0`.
+
+### `++` y `--`: prefijo y sufijo
+
+`x++` incrementa y **devuelve el valor anterior**; `++x` incrementa y **devuelve el nuevo**. Solo importa cuando usas el resultado dentro de una expresión, que es justo cuando conviene evitarlos.
+
+<Pregunta id="operadores-incremento-potencia" />
+
+En React, además, `count++` sobre una variable de estado es un bug doble: intenta reasignar una `const` (o, si fuera `let`, mutaría una copia local que React ignora). Usa `setCount((c) => c + 1)`.
+
+### Precedencia (la parte útil)
+
+No hace falta memorizar la tabla entera. Lo que conviene saber, de más a menos prioridad:
+
+| Grupo | Operadores |
+|---|---|
+| Unarios | `!`, `typeof`, `+x`, `-x`, `++`, `--` |
+| Potencia | `**` (por la derecha) |
+| Multiplicativos | `*`, `/`, `%` |
+| Aditivos | `+`, `-` |
+| Relacionales | `<`, `>`, `<=`, `>=`, `in`, `instanceof` |
+| Igualdad | `==`, `!=`, `===`, `!==` |
+| Lógicos | `&&`, luego `\|\|` y `??` |
+| Condicional | `? :` |
+| Asignación | `=`, `+=`, `&&=`… |
+| Coma | `,` |
+
+Dos consecuencias prácticas: `!a === b` es `(!a) === b`, no `!(a === b)`; y `"Total: " + a + b` concatena de izquierda a derecha (`"Total: 12"` si `a = 1` y `b = 2`). En cuanto dudes, paréntesis.
+
+El **operador coma** evalúa varias expresiones y devuelve la última: `(1, 2)` vale `2`. Fuera de `for (let i = 0, j = n; …; i++, j--)` casi nunca lo quieres; si aparece suele ser un error de tipeo: `if (cargando, error)` no comprueba las dos cosas, solo `error`. (Las comas que separan argumentos o elementos de un array no son este operador.)
+
+### Comparar strings
+
+Si **los dos** operandos de `<`, `>`, `<=` o `>=` son strings, se comparan carácter a carácter por su código UTF-16. Si no, los objetos pasan antes a primitivo y, salvo que los dos queden como strings, se comparan como números.
+
+<Pregunta id="operadores-comparar-strings" />
+
+Esto muerde cuando comparas valores que vienen de inputs, de la URL (`searchParams.get("page")`) o de `localStorage`: todos son strings. Convierte antes de comparar, y para ordenar texto para humanos usa `a.localeCompare(b)`.
+
+## Coerción: las conversiones implícitas
+
+**Coerción** es la conversión automática que hace un operador cuando recibe un tipo que no espera. Hay tres destinos posibles: número, string y booleano.
+
+### A número
+
+`-`, `*`, `/`, `%`, `**`, el `+` unario y las comparaciones relacionales convierten a número:
+
+| Valor | `Number(valor)` |
+|---|---|
+| `""`, `"   "` | `0` |
+| `"42"`, `" 42 "` | `42` |
+| `"42px"`, `"hola"` | `NaN` |
+| `true` / `false` | `1` / `0` |
+| `null` | `0` |
+| `undefined` | `NaN` |
+| `[]` / `[5]` / `[1, 2]` | `0` / `5` / `NaN` |
+| `{}` | `NaN` |
+
+Fíjate en `""` → `0` y `null` → `0`: un input vacío "vale 0" si lo conviertes sin comprobar.
+
+### El `+` binario es especial
+
+`+` suma **o** concatena. El algoritmo, a alto nivel:
+
+1. Convierte cada operando a **primitivo** (ToPrimitive).
+2. Si alguno de los dos es string, convierte el otro a string y **concatena**.
+3. Si no, convierte ambos a número y **suma**.
+
+**ToPrimitive** es cómo un objeto se convierte en primitivo: JavaScript llama a sus métodos `valueOf()` y `toString()` (en ese orden, salvo cuando se pide un string) y usa el primero que devuelva un primitivo. Para arrays y objetos planos, `valueOf` devuelve el propio objeto, así que gana `toString`: un array se convierte con `join(",")` y un objeto plano en `"[object Object]"`. Las fechas son la excepción: con `+` prefieren `toString` (por eso `fecha + 1` concatena), mientras que con `-` usan `valueOf` (milisegundos: `fecha2 - fecha1` funciona).
+
+<Pregunta id="coercion-operadores-aritmeticos" />
+
+<Callout type="cuidado">
+Todo lo que viene de fuera es string: `e.target.value`, `FormData`, `searchParams`, `localStorage`, `dataset`, cabeceras HTTP. Conviértelo **una vez, en el borde** (al leerlo), con `Number(x)` y una comprobación de `Number.isFinite`, y trabaja con números a partir de ahí. Si dejas strings en el estado, cada `+` es un bug esperando.
+</Callout>
+
+### A booleano: truthy y falsy
+
+`if`, `while`, `? :`, `!`, `&&` y `||` convierten a booleano. Solo hay **ocho valores falsy**:
+
+| Falsy | Tipo |
+|---|---|
+| `false` | boolean |
+| `0`, `-0` | number |
+| `0n` | bigint |
+| `""` | string |
+| `null` | null |
+| `undefined` | undefined |
+| `NaN` | number |
+
+Todo lo demás es truthy, incluidos los sospechosos: `"0"`, `"false"`, `" "`, `[]`, `{}` y `new Boolean(false)`.
+
+<Pregunta id="coercion-falsy-truthy" />
+
+Ahora el bug de `if (user.age)` se explica solo: `0` es falsy. Pregunta lo que realmente quieres saber:
+
+```js
+if (user.age != null) { … }          // "¿tiene edad?" (0 vale)
+if (typeof user.age === "number") { … }
+if (items.length > 0) { … }          // y no if (items) — [] es truthy
+```
+
+Lo mismo pasa en JSX con `{count && <Lista />}`, que pinta un `0` cuando la lista está vacía; lo verás a fondo en la lección de cortocircuito.
+
+### `==` vs `===`
+
+`===` (igualdad estricta) compara sin convertir: si los tipos difieren, es `false`. `==` (igualdad débil) convierte antes de comparar, con reglas que hay que memorizar:
+
+- `null == undefined` es `true`, y **ninguno de los dos es `==` a nada más** (ni a `0`, ni a `""`, ni a `false`).
+- Si uno es booleano, se convierte a número primero: `"0" == false` es `0 == 0` → `true`.
+- Entre string y número, el string se convierte a número: `"" == 0` → `true`.
+- Si uno es objeto y el otro primitivo, el objeto pasa por ToPrimitive: `[1] == 1` → `true`.
+- Dos objetos solo son iguales si son **el mismo objeto** (con `==` y con `===`).
+
+Y `NaN` no es igual a nada, ni a sí mismo, con ninguno de los dos.
+
+### `Number.isNaN` y `Object.is`
+
+Como `NaN !== NaN`, hay funciones específicas:
+
+- `isNaN(x)` (global) **convierte primero**: `isNaN("hola")` e `isNaN(undefined)` dan `true`. Casi nunca es lo que quieres.
+- `Number.isNaN(x)` es `true` solo si `x` es el valor `NaN`. Usa esta.
+- `Object.is(a, b)` es como `===` pero con dos diferencias: `Object.is(NaN, NaN)` es `true` y `Object.is(0, -0)` es `false`.
+
+`Object.is` no es una curiosidad: es lo que usa **React** para decidir si un `setState` cambia algo y si las dependencias de `useEffect`, `useMemo` o `useCallback` cambiaron. Gracias a eso, si el estado ya es `NaN`, `setValor(NaN)` no cuenta como cambio, y un `NaN` en las dependencias de un efecto no lo vuelve a ejecutar en cada render (con `===`, `NaN` siempre parecería "nuevo").
+
+<Pregunta id="coercion-igualdad-nan" />
+
+<Callout type="clave">
+Regla práctica: usa siempre `===` y `!==`. La única excepción razonable es `x == null`, que comprueba `null` o `undefined` a la vez (y que muchos linters permiten explícitamente). Para todo lo demás, convierte explícitamente con `Number()`, `String()` o `Boolean()` y compara después: el código queda más claro y los bugs de coerción desaparecen.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="tipos-typeof-preciso" />
+
+<Ejercicio id="coercion-sumar-cantidades" />
+
+## Resumen
+
+- Hay **7 primitivos** (`undefined`, `null`, `boolean`, `number`, `bigint`, `string`, `symbol`) y objetos. Los primitivos son inmutables; los métodos funcionan gracias a wrappers temporales.
+- `typeof` miente con `null` (`"object"`), no distingue arrays ni fechas y dice `"number"` para `NaN`. Usa `=== null`, `Array.isArray` y `Number.isNaN`.
+- `x++` devuelve el valor anterior, `**` es asociativo por la derecha y `%` conserva el signo. Comparar dos strings es lexicográfico: `"10" < "9"`.
+- `+` concatena si algún lado es string; `-`, `*`, `/` y las comparaciones convierten a número. Los objetos pasan antes por ToPrimitive.
+- Hay **8 falsy**: `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined`, `NaN`. `"0"`, `[]` y `{}` son truthy. Pregunta por lo que quieres (`!= null`, `length > 0`), no por "truthiness".
+- Usa `===`; `Object.is` es la igualdad que usa React.
