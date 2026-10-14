@@ -144,7 +144,7 @@ describe("addDays", () => {
     expect(addDays("2026-03-01", -1)).toBe("2026-02-28");
   });
 
-  test("no depende de la zona horaria", () => {
+  test("sumar 0 días devuelve la misma fecha", () => {
     expect(addDays("2026-10-14", 0)).toBe("2026-10-14");
   });
 });

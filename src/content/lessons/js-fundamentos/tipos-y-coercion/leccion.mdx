@@ -121,7 +121,7 @@ El **operador coma** evalúa varias expresiones y devuelve la última: `(1, 2)` 
 
 ### Comparar strings
 
-Si **los dos** operandos de `<`, `>`, `<=` o `>=` son strings, se comparan carácter a carácter por su código UTF-16. Si al menos uno no es string, se convierten a número.
+Si **los dos** operandos de `<`, `>`, `<=` o `>=` son strings, se comparan carácter a carácter por su código UTF-16. Si no, los objetos pasan antes a primitivo y, salvo que los dos queden como strings, se comparan como números.
 
 <Pregunta id="operadores-comparar-strings" />
 
@@ -212,7 +212,7 @@ Como `NaN !== NaN`, hay funciones específicas:
 - `Number.isNaN(x)` es `true` solo si `x` es el valor `NaN`. Usa esta.
 - `Object.is(a, b)` es como `===` pero con dos diferencias: `Object.is(NaN, NaN)` es `true` y `Object.is(0, -0)` es `false`.
 
-`Object.is` no es una curiosidad: es lo que usa **React** para decidir si un `setState` cambia algo y si las dependencias de `useEffect`, `useMemo` o `useCallback` cambiaron. Gracias a eso, `setValor(NaN)` dos veces no provoca un render infinito (con `===`, `NaN` siempre parecería "nuevo").
+`Object.is` no es una curiosidad: es lo que usa **React** para decidir si un `setState` cambia algo y si las dependencias de `useEffect`, `useMemo` o `useCallback` cambiaron. Gracias a eso, si el estado ya es `NaN`, `setValor(NaN)` no cuenta como cambio, y un `NaN` en las dependencias de un efecto no lo vuelve a ejecutar en cada render (con `===`, `NaN` siempre parecería "nuevo").
 
 <Pregunta id="coercion-igualdad-nan" />
 

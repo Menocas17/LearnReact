@@ -45,7 +45,7 @@ console.log([...nombres].sort((a, b) => a.localeCompare(b, "es")).join(","));
     ),
     correct: "c",
     explanation:
-      "sort() sin comparador compara unidades UTF-16: todas las mayúsculas sin acento (N, Z) van antes que las minúsculas, y las letras con tilde (Ñ = U+00D1, Ó = U+00D3) van después de todo el ASCII. localeCompare con \"es\" aplica las reglas del idioma: ignora mayúsculas para ordenar, trata Ó como una variante de O y coloca la ñ entre la n y la o.",
+      "sort() sin comparador compara unidades UTF-16: todas las mayúsculas sin acento (N, Z) van antes que las minúsculas, y las letras con tilde (Ñ = U+00D1, Ó = U+00D3) van después de todo el ASCII. localeCompare con \"es\" aplica las reglas del idioma: trata mayúsculas y minúsculas como una diferencia menor (solo desempatan), trata Ó como una variante de O y coloca la ñ entre la n y la o.",
   },
   {
     id: "numeros-tofixed-epsilon",
@@ -154,10 +154,10 @@ export function FechaPedido({ iso }) {
       "Cambiar toLocaleString por toLocaleDateString, para no mostrar la hora",
       "Pasar una zona horaria explícita, p. ej. toLocaleString(\"es-MX\", { timeZone: \"America/Mexico_City\" })",
       "Envolver el cálculo en useMemo para que solo se haga una vez",
-      "Crear la fecha con Date.parse(iso) en vez de new Date(iso)",
+      "Crear la fecha con new Date(Date.parse(iso)) en vez de new Date(iso)",
     ),
     correct: "b",
     explanation:
-      "Sin timeZone, el formateo usa la zona del entorno: en el servidor sale \"14/10/2026, 3:00:00 a.m.\" y en el navegador \"13/10/2026, 9:00:00 p.m.\". Con locale y zona fijos, ambos producen el mismo texto. Quitar la hora no basta (la fecha también cambia de día), useMemo no evita que el render se ejecute en los dos entornos y Date.parse produce el mismo instante. Si necesitas la zona del usuario, tienes que conocerla en el servidor (guardada en su perfil) o formatear solo en el cliente.",
+      "Sin timeZone, el formateo usa la zona del entorno: en el servidor sale \"14/10/2026, 3:00:00 a.m.\" y en el navegador \"13/10/2026, 9:00:00 p.m.\". Con locale y zona fijos, ambos producen el mismo texto. Quitar la hora no basta (la fecha también cambia de día), useMemo no evita que el render se ejecute en los dos entornos y new Date(Date.parse(iso)) produce el mismo Date. Si necesitas la zona del usuario, tienes que conocerla en el servidor (guardada en su perfil) o formatear solo en el cliente.",
   },
 ];

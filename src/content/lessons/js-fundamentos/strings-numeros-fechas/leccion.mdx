@@ -117,7 +117,7 @@ Mejor aún si los céntimos vienen así desde la base de datos o la API (Stripe,
 
 ### NaN e Infinity
 
-- `NaN` ("not a number") es un `number` que resulta de operaciones sin sentido: `Number("abc")`, `0 / 0`, `undefined + 1`. Es **contagioso** (cualquier operación con `NaN` da `NaN`) y es el único valor que no es igual a sí mismo: `NaN === NaN` es `false`. Compruébalo con `Number.isNaN(x)`, no con `isNaN(x)` global, que convierte primero (`isNaN("abc")` es `true`).
+- `NaN` ("not a number") es un `number` que resulta de operaciones sin sentido: `Number("abc")`, `0 / 0`, `undefined + 1`. Es **contagioso** (casi cualquier operación aritmética con `NaN` da `NaN`) y es el único valor que no es igual a sí mismo: `NaN === NaN` es `false`. Compruébalo con `Number.isNaN(x)`, no con `isNaN(x)` global, que convierte primero (`isNaN("abc")` es `true`).
 - `1 / 0` es `Infinity`, no un error. Si un porcentaje muestra "Infinity %", dividiste entre un total de 0.
 
 Un `NaN` en React suele verse como un "NaN" en pantalla o un input que se queda vacío: la pista es que algún `Number(...)` recibió `undefined` o un string con formato (`"1,5"`, `"12 €"`).
@@ -153,9 +153,9 @@ Con positivos `floor` y `trunc` coinciden, y por eso se intercambian sin pensar.
 
 ### Enteros grandes y BigInt
 
-Un double representa exactamente todos los enteros hasta `Number.MAX_SAFE_INTEGER` (2^53 − 1, unos 9 billones). Por encima, se saltan valores: `2 ** 53 + 1 === 2 ** 53` es `true`. El caso real: IDs de 64 bits (Twitter/X, Discord, algunas bases de datos) que llegan como número en un JSON y se corrompen en silencio al parsearlos. Por eso esas APIs los envían como **string**.
+Un double representa exactamente todos los enteros hasta `Number.MAX_SAFE_INTEGER` (2^53 − 1, unos 9000 billones). Por encima, se saltan valores: `2 ** 53 + 1 === 2 ** 53` es `true`. El caso real: IDs de 64 bits (Twitter/X, Discord, algunas bases de datos) que llegan como número en un JSON y se corrompen en silencio al parsearlos. Por eso esas APIs los envían como **string**.
 
-Para aritmética entera arbitraria existe `BigInt` (`10n`, `BigInt("9007199254740993")`), pero no se mezcla con `number` (`1n + 1` lanza `TypeError`) y `JSON.stringify` no lo serializa. En apps normales lo más habitual es tratar esos IDs como strings.
+Para aritmética entera arbitraria existe `BigInt` (`10n`, `BigInt("9007199254740993")`), pero no se mezcla con `number` (`1n + 1` lanza `TypeError`) y `JSON.stringify` lanza un `TypeError` si encuentra uno. En apps normales lo más habitual es tratar esos IDs como strings.
 
 ## Fechas
 
@@ -199,7 +199,7 @@ La solución depende de qué representa el dato:
 Antes de tocar una fecha, pregúntate si es un **instante** o una **fecha de calendario**. Mezclarlos es el origen de casi todos los bugs de zonas horarias.
 </Callout>
 
-Y cuidado con calcular días restando timestamps en hora local: un cambio de horario de verano hace que un "día" dure 23 o 25 horas. Resta instantes UTC o redondea el resultado.
+Y cuidado con calcular días restando fechas creadas a medianoche local: un cambio de horario de verano hace que un "día" dure 23 o 25 horas. Usa fechas a medianoche UTC o redondea el resultado.
 
 ## Intl: formatear para personas
 
@@ -246,7 +246,7 @@ Las salidas que tienes:
 
 ### Temporal
 
-`Date` tiene casi 30 años y arrastra decisiones que hoy nadie tomaría (mutable, meses desde 0, una sola clase para instantes y fechas de calendario). **Temporal** es la API que lo sustituye, con tipos separados como `Temporal.PlainDate` (fecha de calendario) o `Temporal.ZonedDateTime` (instante con zona), todos inmutables. Ya está disponible en algunos navegadores, pero no en Node 22; mientras no puedas contar con ella en todos tus entornos, aplica las reglas de esta lección con `Date` e `Intl` (o usa una librería como date-fns).
+`Date` tiene más de 30 años y arrastra decisiones que hoy nadie tomaría (mutable, meses desde 0, una sola clase para instantes y fechas de calendario). **Temporal** es la API que lo sustituye, con tipos separados como `Temporal.PlainDate` (fecha de calendario) o `Temporal.ZonedDateTime` (instante con zona), todos inmutables. Ya está disponible en algunos navegadores, pero no en Node 22; mientras no puedas contar con ella en todos tus entornos, aplica las reglas de esta lección con `Date` e `Intl` (o usa una librería como date-fns).
 
 ## Práctica
 
