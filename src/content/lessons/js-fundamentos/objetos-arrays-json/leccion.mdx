@@ -169,7 +169,7 @@ Esto explica el segundo bug: `localStorage` solo guarda strings, y `setItem` con
 
 ```js
 localStorage.setItem("cart", JSON.stringify(cart));
-const cart = JSON.parse(localStorage.getItem("cart") ?? "null");
+const savedCart = JSON.parse(localStorage.getItem("cart") ?? "null");
 ```
 
 ### Qué sobrevive a JSON.stringify

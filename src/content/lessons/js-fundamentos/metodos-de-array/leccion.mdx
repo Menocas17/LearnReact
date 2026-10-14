@@ -78,7 +78,7 @@ La regla práctica en React: el estado y las props se tratan como inmutables, as
 
 ## map: siempre la misma longitud
 
-`map` transforma cada elemento y devuelve un array **exactamente igual de largo**. Si quieres menos elementos, no es `map`: es `filter` (o `flatMap`, ahora lo verás). Un `map` que devuelve `null` para "saltarse" elementos deja huecos `null` en el array; en JSX no se pintan, pero en datos sí molestan.
+`map` transforma cada elemento y devuelve un array **exactamente igual de largo**. Si quieres menos elementos, no es `map`: es `filter` (o `flatMap`, ahora lo verás). Un `map` que devuelve `null` para "saltarse" elementos deja elementos `null` en el array; en JSX no se pintan, pero en datos sí molestan.
 
 El callback recibe **tres** argumentos: `(item, index, array)`. Normalmente ignoras los dos últimos, pero existen, y eso tiene consecuencias cuando pasas una función ya hecha por referencia:
 
@@ -194,7 +194,7 @@ const sorted = posts.toSorted(
 );
 ```
 
-Restar fechas funciona porque `Date` se convierte a número (milisegundos). Si las fechas vienen como strings ISO 8601 con el mismo formato, compararlas como strings también ordena bien.
+Restar fechas funciona porque `Date` se convierte a número (milisegundos). Si las fechas vienen como strings ISO 8601 con el mismo formato y la misma zona horaria (por ejemplo, todas terminadas en `Z`), compararlas como strings también ordena bien.
 
 ## flat y flatMap
 

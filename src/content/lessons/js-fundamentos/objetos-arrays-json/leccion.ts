@@ -22,7 +22,7 @@ export const objetosArraysJson: LessonDef = {
     { title: "MDN: JSON.stringify()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify" },
     { title: "MDN: JSON.parse()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/JSON/parse" },
     { title: "Next.js: Pasar datos de Server a Client Components", url: "https://nextjs.org/docs/app/getting-started/server-and-client-components#passing-data-from-server-to-client-components" },
-    { title: "react.dev: Parámetros y valores serializables", url: "https://react.dev/reference/rsc/use-server#serializable-parameters-and-return-values" },
+    { title: "react.dev: Tipos serializables en las props de Client Components", url: "https://react.dev/reference/rsc/use-client#serializable-types" },
   ],
   reviewed: { date: "2026-10-14", versions: { node: "22", next: "16" } },
 };

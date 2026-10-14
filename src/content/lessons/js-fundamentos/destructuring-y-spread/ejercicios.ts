@@ -186,7 +186,7 @@ describe("getButtonProps", () => {
   const picked = {};
   let rest = { ...props };
   for (const key of keys) {
-    if (key in rest) {
+    if (Object.hasOwn(rest, key)) {
       const { [key]: value, ...others } = rest;
       picked[key] = value;
       rest = others;
@@ -204,7 +204,7 @@ export function getButtonProps({ variant = "primary", size = "md", className, ..
   },
   hints: [
     "En splitProps puedes usar destructuring con clave calculada y rest: const { [key]: value, ...others } = obj saca una clave dinámica y deja el resto en others.",
-    "Para saber si una clave existe aunque valga undefined, usa key in obj en vez de comparar con undefined.",
+    "Para saber si una clave existe aunque valga undefined, usa Object.hasOwn(obj, key) en vez de comparar con undefined (key in obj también encuentra las claves heredadas, como toString).",
     "En getButtonProps destructura en la firma: ({ variant = \"primary\", size = \"md\", className, ...rest } = {}). El = {} final es lo que permite llamarla sin argumentos.",
   ],
 };

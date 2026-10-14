@@ -75,7 +75,7 @@ React siempre pasa un objeto de props (aunque esté vacío), así que en compone
 
 ```js
 function connect({ retries = 3 }) {}
-connect(); // TypeError: Cannot destructure property 'retries' of 'undefined'
+connect(); // TypeError: Cannot read properties of undefined (reading 'retries')
 
 function connectSafe({ retries = 3 } = {}) {}
 connectSafe(); // bien: el parámetro vale {} y luego retries = 3
@@ -157,7 +157,7 @@ Esto hace que `{ ...(cond && { extra: 1 }) }` funcione (si `cond` es `false`, se
 
 ### Spread es una copia superficial
 
-`{ ...obj }` y `[...arr]` crean un objeto o array **nuevo** en el primer nivel, pero los objetos anidados se comparten por referencia. Ya lo viste a fondo en **Valores y referencias** (módulo 3): es la razón por la que actualizar estado anidado exige un spread por cada nivel que cambias, `{ ...user, address: { ...user.address, city } }`.
+`{ ...obj }` y `[...arr]` crean un objeto o array **nuevo** en el primer nivel, pero los objetos anidados se comparten por referencia. Lo verás a fondo en **Valores y referencias** (módulo 3): es la razón por la que actualizar estado anidado exige un spread por cada nivel que cambias, `{ ...user, address: { ...user.address, city } }`.
 
 ### Spread en llamadas y arrays enormes
 
@@ -196,7 +196,7 @@ Así `label` y `error` no llegan al `<input>` (acabarían como atributos sin sen
 <Pregunta id="spread-rest-params" />
 
 <Callout type="clave">
-`...` expande cuando **lee** un valor (spread) y recoge cuando **declara** variables o parámetros (rest). Rest para separar, spread para combinar, y en un objeto literal siempre gana la última clave.
+`...` expande cuando **lee** un valor (spread) y recoge cuando está en el lado izquierdo de un destructuring o en los parámetros (rest). Rest para separar, spread para combinar, y en un objeto literal siempre gana la última clave.
 </Callout>
 
 ## Práctica
