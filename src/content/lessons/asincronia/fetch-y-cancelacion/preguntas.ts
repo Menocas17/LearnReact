@@ -146,7 +146,7 @@ function Perfil({ id }) {
     ),
     correct: "b",
     explanation:
-      "Al cambiar id, React ejecuta la limpieza: controller.abort() hace que la promesa de fetch del perfil 1 rechace con una DOMException \"AbortError\", que llega al catch y se guarda en error. La petición del perfil 2 hace setUser, pero error sigue con valor y el componente muestra el error. Una cancelación no es un fallo: en el catch hay que ignorar err.name === \"AbortError\". React 18 eliminó el aviso de actualizar componentes desmontados, y la respuesta del perfil 1 no puede pisar a nada porque su promesa ya rechazó.",
+      "Al cambiar id, React ejecuta la limpieza: controller.abort() hace que la promesa de fetch del perfil 1 rechace con una DOMException \"AbortError\", que llega al catch y se guarda en error. La petición del perfil 2 hace setUser, pero error sigue con valor y el componente muestra el error. Una cancelación no es un fallo: en el catch hay que ignorar err.name === \"AbortError\" (en desarrollo, con Strict Mode, verías este error incluso sin cambiar de perfil, por el montaje doble). La opción del error de React no aplica: el componente no se desmonta, solo cambia la prop id; y aunque se desmontara, actualizar el estado de un componente desmontado nunca fue un error, solo un aviso que React 18 eliminó. La respuesta del perfil 1 tampoco puede pisar a nada, porque su promesa ya rechazó.",
   },
   {
     id: "abort-no-deshace",
@@ -154,7 +154,7 @@ function Perfil({ id }) {
     concepts: ["async.abort", "async.fetch"],
     difficulty: "base",
     prompt:
-      "Un botón \"Pagar\" envía un POST con fetch y una señal de AbortController. El usuario pulsa \"Cancelar\" (que llama a controller.abort()) un segundo después, cuando la petición ya había llegado al servidor. ¿Qué es cierto?",
+      "Un botón \"Pagar\" envía un POST con fetch y una señal de AbortController. El usuario pulsa \"Cancelar\" (que llama a controller.abort()) un segundo después, cuando la petición ya había llegado al servidor pero la respuesta todavía no había vuelto. ¿Qué es cierto?",
     options: opts(
       "El navegador avisa al servidor y este revierte el pago automáticamente",
       "El pago no se procesa: abort() impide que el servidor termine la petición",

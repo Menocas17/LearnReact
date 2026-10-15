@@ -71,7 +71,7 @@ async function onInput(q) {
 ```
 
 <Callout type="cuidado">
-Abortar no siempre basta por sí solo. Si la respuesta vieja ya llegó y está en mitad de `await res.json()` cuando abortas, o si la operación asíncrona no acepta un `signal` (una función de una librería, un cálculo en un worker), el resultado viejo puede colarse. Abortar **ahorra trabajo**; comprobar que la respuesta sigue siendo la última **garantiza la corrección**. En código robusto se hacen las dos cosas.
+Abortar no siempre basta por sí solo. Mientras dura el `fetch` o la lectura del cuerpo (`res.json()`), la señal te cubre: las dos rechazan con `AbortError`. Pero si después haces más trabajo asíncrono que no mira la señal (otro `await` sin `signal`), o si la operación no acepta un `signal` (una función de una librería, un cálculo en un worker), el resultado viejo puede colarse. Abortar **ahorra trabajo**; comprobar que la respuesta sigue siendo la última **garantiza la corrección**. En código robusto se hacen las dos cosas.
 </Callout>
 
 ## En React: el flag `ignore` en la limpieza del efecto
@@ -104,7 +104,7 @@ Son dos variables distintas que se llaman igual, igual que cada render tiene su 
 En la limpieza también puedes abortar (`controller.abort()`), y es buena idea: ahorras la petición. De paso, esta limpieza hace que el doble montaje de StrictMode en desarrollo no deje dos respuestas compitiendo.
 
 <Callout type="nota">
-Por todo esto react.dev desaconseja escribir a mano la obtención de datos en efectos para casos reales: hay carreras, caché, reintentos, deduplicación… TanStack Query (o SWR) asocia cada resultado a una clave (`["search", query]`), descarta y cancela lo que ya no corresponde a la clave actual y deduplica peticiones iguales. En Next.js, los datos que lee un Server Component no tienen este problema en el cliente: no hay un efecto que dispare peticiones que compitan. Pero entender la carrera es lo que te permite saber qué te están resolviendo.
+Por todo esto react.dev desaconseja escribir a mano la obtención de datos en efectos para casos reales: hay carreras, caché, reintentos, deduplicación… TanStack Query (o SWR) asocia cada resultado a una clave (`["search", query]`), así que la respuesta de una clave vieja no se muestra en la actual; además deduplica peticiones iguales y, si tu `queryFn` usa el `signal` que recibe, cancela las que ya nadie observa. En Next.js, los datos que lee un Server Component no tienen este problema en el cliente: no hay un efecto que dispare peticiones que compitan. Pero entender la carrera es lo que te permite saber qué te están resolviendo.
 </Callout>
 
 ## Leer, modificar, escribir con un `await` en medio
@@ -229,7 +229,7 @@ Aquí vuelve a morder el modelo de "cada render es una llamada nueva":
 
 Hay dos formas correctas de hacerlo.
 
-**Opción A: crear la función debounceada una sola vez** y cancelarla al desmontar.
+**Opción A: crear la función debounceada una sola vez** y cancelarla al desmontar. Necesitas un `debounce` con `cancel()`, como el de lodash o el que vas a escribir en el ejercicio.
 
 ```jsx
 function Buscador() {

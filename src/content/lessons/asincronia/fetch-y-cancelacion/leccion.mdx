@@ -11,7 +11,7 @@ useEffect(() => {
 }, []);
 ```
 
-El backend se cae y devuelve un 500. Tu pantalla de error sí aparece… pero en Sentry el error es `SyntaxError: Unexpected token '<'`. Otro día el backend devuelve un 404 con `{"error":"no existe"}` y la pantalla de error **no** aparece: se pinta un perfil vacío. Ni un caso ni el otro pasan por donde creías.
+El backend se cae y devuelve un 500. Tu pantalla de error sí aparece… pero si registras el error que llega a ese `catch` (en Sentry, por ejemplo), lo que ves es un `SyntaxError` (en Chrome, `Unexpected token '<'`). Otro día el backend devuelve un 404 con `{"error":"no existe"}` y la pantalla de error **no** aparece: se pinta un perfil vacío. Ni un caso ni el otro pasan por donde creías.
 
 Segundo bug. En la ruta `/usuarios/[id]` el usuario hace click en Ana y, enseguida, en Luis. La URL dice Luis, la pantalla muestra a Ana: la respuesta de Ana llegó **después** que la de Luis y la pisó.
 
@@ -54,7 +54,7 @@ La primera promesa se cumple en cuanto llegan las cabeceras; el cuerpo puede seg
 Esta es la regla que te costó en el diagnóstico, así que vale la pena dejarla clavada: **la promesa de `fetch` solo rechaza cuando no hay respuesta HTTP**. Eso es:
 
 - error de red (sin conexión, DNS, el servidor no acepta la conexión),
-- un bloqueo por CORS (el navegador no te deja ver la respuesta, y lo trata como error de red: `TypeError: Failed to fetch`),
+- un bloqueo por CORS (el navegador no te deja ver la respuesta, y lo trata como error de red: un `TypeError`, que en Chrome dice `Failed to fetch`),
 - la petición se cancela con una señal (lo vemos después).
 
 Un 404, un 401 o un 500 **son** respuestas HTTP. Desde el punto de vista de `fetch`, la petición salió bien: el servidor contestó. Decidir si esa respuesta es un error de tu aplicación es trabajo tuyo.
@@ -131,7 +131,7 @@ export async function apiFetch(path, { method = "GET", data, signal } = {}) {
 }
 ```
 
-Es lo mismo que hacen por dentro TanStack Query con un `queryFn` bien escrito, o librerías como `ky`: la diferencia con `axios` es que este rechaza por defecto con status fuera de 2xx, y `fetch` no.
+Es lo que tiene que hacer cualquier `queryFn` de TanStack Query que use `fetch` (la librería solo trata como error lo que tu función lanza), y lo que ya traen hecho `ky` o `axios`: los dos rechazan por defecto con un status fuera de 2xx; `fetch`, no.
 
 ### Cookies y credenciales
 

@@ -118,6 +118,17 @@ describe("throttle", () => {
     t("c");
     expect(fn.calls).toEqual([["a"], ["b"]]);
   });
+
+  test("las llamadas ignoradas no alargan la ventana", async () => {
+    const fn = spy();
+    const t = throttle(fn, 300);
+    t(1);
+    await sleep(100);
+    t(2); // dentro de la ventana: se ignora
+    await sleep(250);
+    t(3); // pasaron más de 300 ms desde la primera: se ejecuta
+    expect(fn.calls).toEqual([[1], [3]]);
+  });
 });
 `,
   },
