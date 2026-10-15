@@ -1,0 +1,211 @@
+## El bug
+
+Un botón exporta un informe. Para que el usuario sepa que algo pasa, muestras un indicador antes de empezar:
+
+```jsx
+function ExportButton({ rows }) {
+  const [exporting, setExporting] = useState(false);
+
+  function handleClick() {
+    setExporting(true);
+    const csv = buildCsv(rows); // síncrono, ~1,5 s con 100 000 filas
+    download(csv);
+    setExporting(false);
+  }
+
+  return <button onClick={handleClick}>{exporting ? "Exportando…" : "Exportar"}</button>;
+}
+```
+
+El "Exportando…" no aparece nunca. Durante un segundo y medio la página no responde: el botón no cambia, el hover no funciona, los clicks no responden (se quedan esperando y se procesan después). Luego todo vuelve de golpe. Mover el cálculo a un `setTimeout(…, 0)` o a un `Promise.resolve().then(…)` "a ver si así" tampoco lo arregla, o lo arregla a medias.
+
+Para entender por qué tienes que saber qué hace el navegador entre línea y línea de tu código. Y la respuesta corta es: **nada**. JavaScript corre en un solo hilo y el navegador solo puede pintar cuando tu código suelta ese hilo. El mecanismo que decide qué se ejecuta después es el **event loop**.
+
+## Un hilo, una pila
+
+El motor de JavaScript ejecuta tu código en un único hilo, con una **call stack**: cada llamada a función apila un marco y cada `return` lo desapila. Mientras haya algo en la pila, el hilo está ocupado y nada más de JavaScript puede ejecutarse: ni otro handler, ni un callback de timer. Tampoco el navegador puede pintar ni procesar input en ese hilo principal.
+
+Lo que sí ocurre en paralelo ocurre **fuera** del motor: el navegador (las **Web APIs**) o Node (libuv y sus APIs) se encargan de contar el tiempo de un `setTimeout`, de esperar la respuesta de un `fetch` o de detectar un click. Cuando eso termina, no interrumpen tu código: dejan un trabajo pendiente en una cola. Y el event loop es, en esencia, este bucle:
+
+1. Toma **una tarea** de la cola de tareas y la ejecuta hasta que la pila se vacía.
+2. Vacía **toda** la cola de microtareas, incluidas las que se encolen mientras tanto.
+3. Si toca (en el navegador, más o menos una vez por frame), **actualiza el renderizado**: `requestAnimationFrame`, estilos, layout y pintado.
+4. Vuelve al paso 1.
+
+## Tareas y microtareas
+
+Hay dos colas con reglas muy distintas:
+
+| | Tareas (*macrotasks*) | Microtareas |
+|---|---|---|
+| Qué las encola | el script inicial, `setTimeout`, `setInterval`, eventos del DOM (click, input), mensajes, I/O de Node | `then`/`catch`/`finally`, `queueMicrotask`, la continuación tras un `await`, `MutationObserver` |
+| Cuántas por vuelta | **una** | **todas**, hasta que la cola quede vacía |
+| ¿Puede pintar el navegador entre dos? | sí | no |
+
+Dos detalles que suelen fallar:
+
+- **El script entero es una tarea.** Por eso todo el código síncrono termina antes de cualquier callback, y por eso las microtareas que encola el script se ejecutan antes que cualquier `setTimeout`.
+- **Una función `async` es síncrona hasta su primer `await`.** Llamarla ejecuta su cuerpo ya, en la pila actual. Al llegar al `await` la función se suspende, devuelve una promesa pendiente y el resto de su cuerpo queda programado como microtarea cuando el valor esperado esté resuelto (con un valor que no es una promesa o con una promesa ya resuelta, eso es de inmediato).
+
+## Una traza paso a paso
+
+Este es el modelo que tienes que poder reproducir de memoria:
+
+```js
+async function cargar() {
+  console.log("cargar: antes del await");
+  await null;
+  console.log("cargar: después del await");
+}
+
+console.log("script: inicio");
+setTimeout(() => console.log("timeout"), 0);
+cargar();
+Promise.resolve().then(() => {
+  console.log("then");
+  queueMicrotask(() => console.log("microtarea anidada"));
+});
+console.log("script: fin");
+```
+
+| Paso | Qué ocurre | Call stack | Microtareas | Tareas | Consola |
+|---|---|---|---|---|---|
+| 1 | Empieza la tarea "script" | script | | | `script: inicio` |
+| 2 | `setTimeout` entrega el timer a la Web API; al vencer, su callback irá a la cola de tareas | script | | timeout | |
+| 3 | `cargar()` se ejecuta hasta el `await` y se suspende | script → cargar | continuación de cargar | timeout | `cargar: antes del await` |
+| 4 | `.then` sobre una promesa ya resuelta encola su callback | script | continuación, then | timeout | |
+| 5 | Termina el script: la pila se vacía | | continuación, then | timeout | `script: fin` |
+| 6 | Microtarea: continuación de `cargar` | cargar | then | timeout | `cargar: después del await` |
+| 7 | Microtarea: el `then`, que encola otra | then | anidada | timeout | `then` |
+| 8 | Microtarea anidada: la cola sigue sin estar vacía, así que también va ahora | anidada | | timeout | `microtarea anidada` |
+| 9 | Cola de microtareas vacía: el navegador puede pintar | | | timeout | |
+| 10 | Siguiente tarea: el timeout | timeout | | | `timeout` |
+
+Fíjate en el paso 3: lo que hace que "cargar: después del await" vaya antes que "then" no es nada especial del `await`, sino el **orden en que se encolaron**: la continuación entró en la cola de microtareas en el paso 3 y el `then` en el paso 4. Las microtareas son una cola FIFO.
+
+<Callout type="clave">
+Después de **cada** tarea se vacía **toda** la cola de microtareas. No "primero todas las microtareas y luego todos los timers": tarea, microtareas, (quizá pintado), tarea, microtareas…
+</Callout>
+
+Comprueba que lo tienes con un caso donde hay microtareas dentro de un timer:
+
+<Pregunta id="event-loop-microtareas-tras-cada-tarea" />
+
+Y el caso de React de siempre: un handler que lanza una función async sin esperarla.
+
+<Pregunta id="event-loop-await-continuacion" />
+
+## Microtareas que no acaban nunca
+
+La regla "vaciar toda la cola" tiene una consecuencia: si cada microtarea encola otra, el event loop nunca llega al siguiente paso. Ni timers, ni eventos, ni pintado.
+
+<Pregunta id="event-loop-microtareas-infinitas" />
+
+Con 1000 vueltas solo retrasas el timer; con una condición que nunca se cumple (un `then` recursivo que "sondea" algo, por ejemplo) congelas la pestaña igual que con un `while (true)`. Un `setTimeout` recursivo, en cambio, no bloquea: cada vuelta es una tarea nueva y entre ellas el navegador respira.
+
+<Callout type="cuidado">
+"Asíncrono" no significa "en segundo plano". Un callback asíncrono se ejecuta **más tarde**, pero en el mismo hilo: si tarda 2 segundos, bloquea 2 segundos, venga de un timer, de una promesa o de un `await`.
+</Callout>
+
+## Callbacks síncronos y asíncronos
+
+Un callback es una función que le pasas a otra para que la llame ella. Que sea síncrono o asíncrono no depende de la función que pasas, sino de **quién la llama y cuándo**:
+
+```js
+const ids = [3, 1, 2];
+const dobles = ids.map((id) => id * 2);   // map llama al callback YA, 3 veces, y luego retorna
+setTimeout(() => console.log("tarde"), 0); // setTimeout retorna YA; el callback irá en otra tarea
+```
+
+`map`, `forEach`, `filter` o `sort` llaman al callback dentro de su propia ejecución: cuando la línea termina, el trabajo está hecho. `setTimeout`, `addEventListener` o `then` solo **registran** el callback y retornan; se ejecutará en otra tarea o microtarea, cuando la pila esté vacía.
+
+Antes de las promesas, todo lo asíncrono se encadenaba así, callback dentro de callback, con el manejo de errores repetido en cada nivel: el famoso *callback hell*. Es la motivación de las promesas, que verás en la siguiente lección.
+
+### setTimeout y setInterval
+
+```js
+const id = setTimeout(guardarBorrador, 500); // devuelve un identificador
+clearTimeout(id);                             // cancela si aún no se ha ejecutado
+
+const poll = setInterval(comprobarEstado, 1000);
+clearInterval(poll);
+```
+
+Lo que nadie te cuenta del retardo:
+
+- **Es un mínimo, no una garantía.** Cuando vence, el callback solo se encola como tarea. Si el hilo está ocupado, espera lo que haga falta.
+- **`0` no es inmediato.** Significa "en la siguiente tarea disponible", siempre después del código síncrono y de las microtareas pendientes. Node lo convierte en 1 ms; los navegadores imponen un mínimo de 4 ms cuando los timers se anidan (a partir del quinto nivel de un `setTimeout` que programa otro), y en pestañas en segundo plano los limitan a una ejecución por segundo aproximadamente, o incluso menos.
+- **Los timers con el mismo retardo se ejecutan en el orden en que se crearon.** Con retardos distintos, el orden depende del tiempo y de lo cargado que esté el hilo.
+
+<Pregunta id="callbacks-retardo-minimo" />
+
+`setInterval` añade un problema: no sabe nada de tu callback. Si el callback tarda más que el intervalo, los ticks se ejecutan pegados, sin hueco para nada más. Y si el callback lanza algo asíncrono (un `fetch` de sondeo, por ejemplo), las ejecuciones **se solapan**: la petición 2 sale antes de que vuelva la 1 y las respuestas pueden llegar desordenadas. La alternativa es un `setTimeout` recursivo: programas el siguiente tick **cuando el actual termina**, así el intervalo se mide desde el final del trabajo.
+
+<Callout type="nota">
+En React, cada `setTimeout` o `setInterval` creado en un efecto se limpia en la función de limpieza con `clearTimeout`/`clearInterval`. Si no, sigue vivo tras desmontar el componente, y en desarrollo (Strict Mode monta, desmonta y vuelve a montar) tendrás dos.
+</Callout>
+
+## Cuándo pinta el navegador
+
+Vuelve al paso 3 del bucle: el renderizado es una etapa más del event loop, y solo ocurre **entre tareas**, con la pila vacía y la cola de microtareas vacía. Cambiar el DOM (`textContent`, una clase, un estilo) no pinta nada: marca que hay que repintar. El pintado llega cuando tu código suelta el hilo, normalmente al ritmo de la pantalla (unos 16 ms a 60 Hz).
+
+Ahora el bug del principio tiene explicación: `setExporting(true)`, el cálculo y `setExporting(false)` ocurren en la **misma tarea** (el evento click). Cuando el navegador por fin puede pintar, el estado ya vuelve a ser `false`. Y mover el cálculo a una microtarea no sirve, porque las microtareas también van antes del pintado:
+
+<Pregunta id="render-microtarea-no-pinta" />
+
+### Tareas largas e INP
+
+Una tarea que ocupa el hilo más de 50 ms se considera una **tarea larga**. Mientras dura, un click del usuario se queda esperando en la cola, y cuando por fin se procesa, su resultado no se ve hasta el siguiente pintado. Eso es lo que mide **INP** (*Interaction to Next Paint*), una de las Core Web Vitals: el tiempo desde la interacción hasta el siguiente frame. Un bucle síncrono de 1,5 s dentro de un handler es una interacción que tarda más de 1,5 s en verse, y el INP de la página lo refleja.
+
+La solución, sin Web Workers, es **trocear** el trabajo: procesar un bloque, ceder el hilo con una tarea nueva y seguir.
+
+```js
+async function procesar(filas) {
+  for (let i = 0; i < filas.length; i++) {
+    procesarFila(filas[i]);
+    if (i % 500 === 499) {
+      // cede: entre bloques el navegador puede atender clicks y pintar
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+}
+```
+
+`scheduler.yield()` hace lo mismo con una ventaja: la continuación se pone por delante de otras tareas pendientes de la misma prioridad, así que tu trabajo no queda al final de la cola. No está en todos los navegadores, así que se usa comprobando si existe y recurriendo a `setTimeout` si no.
+
+<Pregunta id="render-trocear-trabajo" />
+
+### requestAnimationFrame
+
+`requestAnimationFrame(cb)` programa `cb` para **justo antes del siguiente pintado**, dentro del paso de renderizado. Es el sitio correcto para animaciones y para leer o escribir el layout una vez por frame: un `setTimeout(…, 16)` no está sincronizado con la pantalla y puede ejecutarse dos veces en un frame o ninguna. Cuidado con lo que no hace: no trocea nada (un callback de rAF lento retrasa ese mismo frame) y en pestañas ocultas se pausa.
+
+Un truco habitual: para ejecutar algo **después** de que el navegador haya pintado, se combina `requestAnimationFrame` con un `setTimeout` dentro, que cae en la primera tarea tras ese frame.
+
+### Por qué React agrupa las actualizaciones
+
+Todo esto explica una decisión que ya conoces de React: dentro de un handler, varias llamadas a `setX` no producen varios renders, sino **uno** al terminar (*batching*). Tiene sentido: mientras tu handler se ejecuta, el navegador no puede pintar, así que renderizar entre `setA(1)` y `setB(2)` sería trabajo que nadie vería nunca. React encola las actualizaciones y renderiza una vez cuando el handler termina; desde React 18 hace lo mismo con las que ocurren en timeouts y promesas.
+
+Por la misma razón, `useLayoutEffect` se ejecuta tras actualizar el DOM pero antes de que el navegador pinte (dentro de la misma tarea, bloqueándolo), mientras que `useEffect` normalmente se ejecuta después del pintado. La excepción: si la actualización viene de una interacción discreta (un click, una tecla), React puede ejecutar los efectos antes de que el navegador pinte, así que no cuentes con que `useEffect` siempre deje ver el estado intermedio.
+
+<Callout type="clave">
+El pintado ocurre entre tareas, nunca durante una ni entre microtareas. Si quieres que el usuario vea algo antes de un trabajo pesado, tienes que soltar el hilo con una tarea nueva; y si el trabajo es largo, trocéalo.
+</Callout>
+
+## Práctica
+
+El primero aplica el troceado a un caso real: procesar miles de elementos sin congelar la página. El segundo construye un temporizador periódico que, a diferencia de `setInterval`, no se pisa.
+
+<Ejercicio id="event-loop-run-in-chunks" />
+
+<Ejercicio id="callbacks-ticker" />
+
+## Resumen
+
+- JavaScript ejecuta tu código en **un solo hilo** con una call stack. Las Web APIs (o Node) esperan en paralelo, pero sus callbacks vuelven al hilo a través de colas.
+- El event loop toma **una tarea** (script, timer, evento, I/O), luego vacía **toda** la cola de microtareas (`then`, `queueMicrotask`, continuaciones de `await`) y, si toca, pinta.
+- Una función `async` es síncrona hasta su primer `await`; lo que sigue es una microtarea.
+- Las microtareas que encolan microtareas pueden bloquear para siempre los timers y el pintado.
+- Un callback puede ser síncrono (`map`) o asíncrono (`setTimeout`). El retardo de un timer es un **mínimo**; `setTimeout(fn, 0)` significa "en una tarea posterior".
+- Prefiere un `setTimeout` recursivo a `setInterval` cuando el trabajo puede tardar o es asíncrono, y limpia siempre los timers.
+- El navegador pinta **entre tareas**. Una tarea larga congela la UI y empeora el INP: trocéala con `setTimeout` o `scheduler.yield()`. Para animar, `requestAnimationFrame`.
+- React agrupa los `setState` de un evento en un solo render porque, de todas formas, no se podría pintar nada en medio.

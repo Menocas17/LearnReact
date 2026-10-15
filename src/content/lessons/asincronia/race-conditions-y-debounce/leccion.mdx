@@ -1,0 +1,297 @@
+## Dos bugs que seguramente ya viste
+
+**El buscador que miente.** Escribes "re" en un buscador y la lista muestra resultados de "r". El código parece impecable:
+
+```jsx
+useEffect(() => {
+  fetchResults(query).then(setResults);
+}, [query]);
+```
+
+**El botón que duplica.** Un usuario hace doble clic en "Guardar" (o la red va lenta y vuelve a pulsar) y en la base de datos aparecen dos pedidos idénticos.
+
+Ninguno de los dos es un bug de React ni de `fetch`. Son **race conditions**: el resultado depende del orden en que terminan tareas asíncronas que se solapan, y ese orden no lo controlas tú. En esta lección vas a ver cómo se producen con líneas de tiempo explícitas, cómo se arreglan y, de paso, cómo **limitar la frecuencia** con la que algo se ejecuta (debounce y throttle), que es la otra mitad de cualquier buscador decente.
+
+## El orden de llegada no es el orden de salida
+
+En "fetch y cancelación" viste que `fetch` devuelve una promesa que se resuelve cuando llega la respuesta. Si lanzas dos peticiones, cada una es independiente: puede pasar por un servidor distinto, una caché, una consulta más cara ("r" tiene muchos más resultados que "re")… Nada las serializa.
+
+Y `await` tampoco: como viste en "async/await", `await` suspende **solo esa llamada** a la función async. Otra llamada a la misma función sigue su propia vida. Cada llamada a `onInput` es una carrera independiente:
+
+| t (ms) | Qué pasa |
+|---|---|
+| 0 | El usuario escribe "r": sale la petición A |
+| 100 | Escribe "re": sale la petición B |
+| 200 | Llega B ("re") → se pinta. Correcto, de momento |
+| 400 | Llega A ("r") → se pinta **encima**. La pantalla queda con datos viejos |
+
+<Pregunta id="race-respuesta-vieja-gana" />
+
+La clave: el último en **llegar** gana, cuando lo que quieres es que gane el último en **salir**. Hay dos formas de conseguirlo, y en la práctica se combinan.
+
+## Solución 1: ignorar respuestas viejas
+
+Numera las peticiones. Una variable compartida guarda el número de la última; cada llamada guarda **el suyo** en una constante local (un closure por llamada, como en el módulo de closures). Al volver del `await`, si los números no coinciden, la respuesta es vieja y se descarta.
+
+```js
+let lastRequest = 0;
+
+async function onInput(q) {
+  const requestId = ++lastRequest; // la de esta llamada, no cambia
+  const results = await search(q);
+  if (requestId !== lastRequest) return; // alguien salió después que yo
+  render(results);
+}
+```
+
+<Pregunta id="race-id-de-peticion" />
+
+Esto es **"el último gana"** (*latest wins*). Es correcto, pero la petición vieja se sigue descargando y procesando: solo tiras el resultado.
+
+## Solución 2: abortar la anterior
+
+Con lo que viste en "fetch y cancelación", puedes cancelar de verdad la petición anterior: el servidor puede dejar de trabajar (si la conexión se corta a tiempo), no descargas datos inútiles y el `fetch` viejo se rechaza con un `AbortError`.
+
+```js
+let controller = null;
+
+async function onInput(q) {
+  controller?.abort();
+  controller = new AbortController();
+  try {
+    const res = await fetch("/api/search?q=" + encodeURIComponent(q), {
+      signal: controller.signal,
+    });
+    render(await res.json());
+  } catch (error) {
+    if (error.name === "AbortError") return; // cancelada a propósito: no es un error
+    throw error;
+  }
+}
+```
+
+<Callout type="cuidado">
+Abortar no siempre basta por sí solo. Mientras dura el `fetch` o la lectura del cuerpo (`res.json()`), la señal te cubre: las dos rechazan con `AbortError`. Pero si después haces más trabajo asíncrono que no mira la señal (otro `await` sin `signal`), o si la operación no acepta un `signal` (una función de una librería, un cálculo en un worker), el resultado viejo puede colarse. Abortar **ahorra trabajo**; comprobar que la respuesta sigue siendo la última **garantiza la corrección**. En código robusto se hacen las dos cosas.
+</Callout>
+
+## En React: el flag `ignore` en la limpieza del efecto
+
+react.dev recomienda exactamente la solución 1 para pedir datos en un efecto, con un detalle elegante: en vez de un contador global, usa una variable local de **cada ejecución del efecto**.
+
+```jsx
+useEffect(() => {
+  let ignore = false;
+  fetchResults(query).then((data) => {
+    if (!ignore) setResults(data);
+  });
+  return () => {
+    ignore = true;
+  };
+}, [query]);
+```
+
+Funciona porque React ejecuta la limpieza del efecto anterior **antes** de ejecutar el siguiente, y cada `then` cierra sobre el `ignore` de su propia ejecución:
+
+| t (ms) | Qué pasa |
+|---|---|
+| 0 | Render con `query = "r"`. Efecto A: crea `ignoreA = false` y pide "r" |
+| 100 | Render con `query = "re"`. React ejecuta la limpieza de A → `ignoreA = true`. Efecto B: crea `ignoreB = false` y pide "re" |
+| 200 | Llega "re": su callback lee `ignoreB` (false) → `setResults` |
+| 400 | Llega "r": su callback lee `ignoreA` (true) → no hace nada |
+
+Son dos variables distintas que se llaman igual, igual que cada render tiene su propio `count`. El mismo mecanismo que en "Closures" te causaba el intervalo atascado aquí juega a tu favor: el callback viejo ve **su** variable, y la limpieza la marcó.
+
+En la limpieza también puedes abortar (`controller.abort()`), y es buena idea: ahorras la petición. De paso, esta limpieza hace que el doble montaje de StrictMode en desarrollo no deje dos respuestas compitiendo.
+
+<Callout type="nota">
+Por todo esto react.dev desaconseja escribir a mano la obtención de datos en efectos para casos reales: hay carreras, caché, reintentos, deduplicación… TanStack Query (o SWR) asocia cada resultado a una clave (`["search", query]`), así que la respuesta de una clave vieja no se muestra en la actual; además deduplica peticiones iguales y, si tu `queryFn` usa el `signal` que recibe, cancela las que ya nadie observa. En Next.js, los datos que lee un Server Component no tienen este problema en el cliente: no hay un efecto que dispare peticiones que compitan. Pero entender la carrera es lo que te permite saber qué te están resolviendo.
+</Callout>
+
+## Leer, modificar, escribir con un `await` en medio
+
+No todas las carreras son respuestas fuera de orden. Otra muy común: dos tareas leen un valor compartido, esperan algo, y escriben un valor calculado a partir de lo que leyeron.
+
+<Pregunta id="race-leer-modificar-escribir" />
+
+Lo que pasa es una **actualización perdida** (*lost update*):
+
+| t (ms) | Reserva de 2 | Reserva de 3 | `stock` |
+|---|---|---|---|
+| 0 | lee 10 | lee 10 | 10 |
+| 100 | escribe 10 − 2 | (esperando) | 8 |
+| 300 | | escribe 10 − 3 | 7 |
+
+JavaScript es de un solo hilo, así que dentro de un tramo síncrono nadie te interrumpe. Pero **cada `await` es un punto donde otro código puede ejecutarse** y cambiar lo que leíste. Cualquier valor que leas antes de un `await` y uses después puede estar obsoleto.
+
+En React es el mismo bug con otra cara:
+
+```jsx
+async function addItem(text) {
+  const saved = await api.create(text);
+  setItems([...items, saved]); // items es el del render en que empezó la función
+}
+```
+
+Si añades dos elementos rápido, el segundo `setItems` parte de un `items` que no contiene el primero y lo borra. La solución es la que ya conoces: `setItems((prev) => [...prev, saved])`, que lee el valor **en el momento de escribir**. En el servidor, el equivalente es una operación atómica (`UPDATE ... SET stock = stock - 3`) o una transacción, nunca "leer, restar en JS, escribir".
+
+## Doble envío de formularios
+
+El "Guardar" duplicado es una carrera entre dos clics. Defensas, de la más superficial a la más sólida:
+
+1. **Deshabilitar el botón mientras se envía.** Con un estado `pending` (lo que te dan `useActionState`, `useFormStatus` o `useTransition`). Cubre el caso típico del doble clic.
+2. **Un guard síncrono** si no pasas por estado de React: un flag en una variable (o `useRef`) que compruebas y activas en la misma línea síncrona, antes de cualquier `await`. Si lo activas después del `await`, el segundo clic ya entró.
+3. **Idempotencia en el servidor.** El botón deshabilitado no protege de dos pestañas, de un reintento automático tras un timeout ni de un usuario con la red caída que recarga. Genera una clave por intención de envío (por ejemplo `crypto.randomUUID()` al abrir el formulario), mándala con la petición, y que el servidor ignore la segunda petición con la misma clave. Así repetir la operación da el mismo resultado que hacerla una vez.
+
+<Callout type="clave">
+Una race condition aparece siempre que dos tareas asíncronas se solapan y el resultado depende de cuál termina antes. Las preguntas que debes hacerte: ¿puede esta operación lanzarse dos veces antes de que termine la primera? ¿Leo algo antes de un `await` que uso después?
+</Callout>
+
+## Debounce: esperar a que el usuario pare
+
+Volvamos al buscador. Aunque arregles la carrera, pedir resultados en cada tecla es un desperdicio: para "react" lanzas 5 peticiones y solo te interesa la última. **Debounce** retrasa la ejecución hasta que pasan X ms **sin llamadas nuevas**. Cada llamada reinicia la cuenta atrás.
+
+```js
+function debounce(fn, ms) {
+  let timer; // compartido por todas las llamadas (closure)
+  return (...args) => {
+    clearTimeout(timer);                       // cancela la ejecución pendiente
+    timer = setTimeout(() => fn(...args), ms); // y programa una nueva
+  };
+}
+```
+
+Con `ms = 300` y un usuario que escribe "re", hace una pausa y sigue:
+
+| t (ms) | Llamada | Timer pendiente |
+|---|---|---|
+| 0 | "r" | ejecutar "r" en 300 |
+| 150 | "re" | cancela; ejecutar "re" en 450 |
+| 450 | | **se ejecuta con "re"** |
+| 700 | "rea" | ejecutar "rea" en 1000 |
+| 850 | "reac" | cancela; ejecutar "reac" en 1150 |
+| 1150 | | **se ejecuta con "reac"** |
+
+Todo depende del closure: si cada llamada tuviera su propio `timer`, `clearTimeout` no podría cancelar el de la anterior.
+
+Dos extras que tienen las implementaciones de librerías (lodash, por ejemplo):
+
+- **`cancel()`**: descarta la ejecución pendiente. Imprescindible al desmontar un componente, para que no se ejecute algo sobre una pantalla que ya no existe.
+- **`flush()`**: ejecuta ya la pendiente. Útil en un autoguardado: guardas con debounce mientras el usuario escribe, pero al salir del campo (`blur`) o de la página haces `flush()` para no perder lo último.
+
+<Pregunta id="debounce-cancel-linea-tiempo" />
+
+**Leading y trailing.** Lo que acabas de ver es *trailing*: ejecuta al **final** de la ráfaga. La variante *leading* ejecuta en la **primera** llamada y luego ignora hasta que haya X ms de silencio (útil para un botón: responde al instante y absorbe los clics repetidos). Las librerías permiten activar uno, otro o ambos.
+
+## Throttle: como mucho una vez cada X ms
+
+Debounce tiene un problema con eventos continuos: si el usuario hace scroll sin parar durante 5 segundos, un debounce de 200 ms no ejecuta **nada** hasta que para. Para scroll, resize o el movimiento del ratón quieres lo contrario: ejecutar **a un ritmo máximo** mientras dura la ráfaga. Eso es **throttle**.
+
+```js
+function throttle(fn, ms) {
+  let waiting = false;
+  return (...args) => {
+    if (waiting) return;  // dentro de la ventana: se ignora
+    fn(...args);          // fuera: ejecuta en el acto
+    waiting = true;
+    setTimeout(() => {
+      waiting = false;    // se abre la puerta otra vez
+    }, ms);
+  };
+}
+```
+
+Esta versión es *leading* sin *trailing*: la última llamada de la ráfaga puede perderse. Si necesitas que el estado final siempre se procese (la posición final del scroll), añade un trailing: guarda los últimos argumentos ignorados y ejecútalos al cerrarse la ventana.
+
+<Pregunta id="throttle-vs-debounce-salida" />
+
+### Debounce vs throttle: cuándo usar cada uno
+
+| Situación | Usa | Por qué |
+|---|---|---|
+| Buscar mientras escribe | debounce (trailing) | Solo importa el texto final de la ráfaga |
+| Autoguardado de un formulario | debounce + `flush()` al salir | Guardar cuando para, sin perder lo último |
+| Validar un campo contra el servidor | debounce | No validar cada letra intermedia |
+| Posición de scroll, scroll infinito | throttle | Feedback continuo durante el gesto |
+| Recalcular layout en `resize` | throttle (o debounce si solo importa el tamaño final) | Ritmo acotado mientras se arrastra |
+| Botón que no debe dispararse dos veces | debounce leading, o deshabilitar | Responder al primer clic e ignorar los demás |
+
+<Callout type="cuidado">
+Debounce **no** arregla la race condition. Reduce el número de peticiones, pero si el usuario pausa 300 ms, escribe otra letra y la primera petición tarda 2 segundos, vuelves a tener dos peticiones en vuelo. Debounce y "el último gana" son complementarios: uno decide **cuándo** pedir, el otro **qué respuesta** vale.
+</Callout>
+
+Para animaciones ligadas al scroll, el throttle natural no es un número de milisegundos sino el ritmo de pintado del navegador: `requestAnimationFrame` ejecuta como mucho una vez por frame.
+
+## Debounce en React
+
+Aquí vuelve a morder el modelo de "cada render es una llamada nueva":
+
+<Pregunta id="debounce-recreado-en-render" />
+
+Hay dos formas correctas de hacerlo.
+
+**Opción A: crear la función debounceada una sola vez** y cancelarla al desmontar. Necesitas un `debounce` con `cancel()`, como el de lodash o el que vas a escribir en el ejercicio.
+
+```jsx
+function Buscador() {
+  const [q, setQ] = useState("");
+  const buscarLuego = useMemo(() => debounce((texto) => buscar(texto), 300), []);
+
+  useEffect(() => {
+    return () => buscarLuego.cancel(); // nada de ejecuciones tras desmontar
+  }, [buscarLuego]);
+
+  // onChange: setQ(e.target.value); buscarLuego(e.target.value);
+}
+```
+
+Dos trampas. Primero, `useMemo` es una optimización: react.dev advierte que React puede descartar el valor cacheado en algunos casos, así que si la identidad debe ser estable sí o sí, un `useRef` (o `useState` con inicializador) es más fiable. Segundo, la función de dentro se crea **una vez** y cierra sobre las variables del primer render: es el intervalo atascado otra vez. Pasa todo lo que cambie como argumento (como hace `buscarLuego(texto)`) en vez de leerlo del closure.
+
+**Opción B: debouncear el valor, no la función.** Suele ser más limpio, porque el timer lo gestiona un efecto, y la limpieza del efecto **es** el `clearTimeout`:
+
+```jsx
+function useDebouncedValue(value, ms) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(id); // un cambio antes de ms cancela el anterior
+  }, [value, ms]);
+  return debounced;
+}
+
+function Buscador() {
+  const [q, setQ] = useState("");
+  const query = useDebouncedValue(q, 300);
+
+  useEffect(() => {
+    let ignore = false;
+    fetchResults(query).then((data) => {
+      if (!ignore) setResults(data);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [query]);
+  // …
+}
+```
+
+Fíjate en que cada cambio de `value` ejecuta la limpieza del efecto anterior (cancela su timer) y programa uno nuevo: es el mismo `clearTimeout` + `setTimeout` de `debounce`, pero el "closure compartido" lo pone React. Y el efecto que pide datos sigue llevando su flag `ignore`, porque el debounce no elimina la carrera.
+
+<Callout type="nota">
+`useDeferredValue` no es un debounce. No espera un tiempo fijo: React renderiza primero con el valor viejo y prepara el nuevo en segundo plano, interrumpible y adaptado a la velocidad del dispositivo. Sirve para que un **render** caro no bloquee el input. Si lo que quieres es lanzar **menos peticiones de red**, react.dev indica que debounce y throttle siguen siendo la herramienta.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="debounce-throttle-implementar" />
+
+<Ejercicio id="race-latest-only" />
+
+## Resumen
+
+- Las respuestas asíncronas llegan en el orden que decide la red, no en el que salieron. `await` no serializa llamadas distintas.
+- **El último gana**: numera las peticiones (o usa el flag `ignore` de la limpieza del efecto) y descarta las viejas; además, **aborta** la anterior para ahorrar trabajo.
+- Leer un valor antes de un `await` y escribir algo calculado con él después pierde actualizaciones: calcula sobre el valor actual (updater de `setState`, operación atómica en el servidor).
+- Doble envío: deshabilita mientras está pendiente y haz la operación **idempotente** en el servidor.
+- **Debounce** ejecuta tras X ms de silencio (búsqueda, autoguardado); **throttle**, como mucho una vez cada X ms (scroll, resize). Ambos viven de un closure con el timer.
+- En React, crea la función debounceada una vez (y cancélala al desmontar) o debouncea el valor con un efecto cuya limpieza hace `clearTimeout`. Debounce no sustituye a la protección contra carreras.

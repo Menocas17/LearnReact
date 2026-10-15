@@ -7,6 +7,11 @@ import ObjetosArraysJson from "./js-fundamentos/objetos-arrays-json/leccion.mdx"
 import MetodosDeArray from "./js-fundamentos/metodos-de-array/leccion.mdx";
 import DestructuringYSpread from "./js-fundamentos/destructuring-y-spread/leccion.mdx";
 import Closures from "./js-profundo/closures/leccion.mdx";
+import EventLoop from "./asincronia/event-loop/leccion.mdx";
+import Promesas from "./asincronia/promesas/leccion.mdx";
+import AsyncAwait from "./asincronia/async-await/leccion.mdx";
+import FetchYCancelacion from "./asincronia/fetch-y-cancelacion/leccion.mdx";
+import RaceConditionsYDebounce from "./asincronia/race-conditions-y-debounce/leccion.mdx";
 import ScopeYHoisting from "./js-profundo/scope-y-hoisting/leccion.mdx";
 import ValoresYReferencias from "./js-profundo/valores-y-referencias/leccion.mdx";
 import This from "./js-profundo/this/leccion.mdx";
@@ -34,4 +39,9 @@ export const lessonContent: Readonly<Record<string, () => ReactNode>> = {
   "js-profundo/prototipos-y-clases": () => <PrototiposYClases />,
   "js-profundo/objetos-y-colecciones": () => <ObjetosYColecciones />,
   "js-profundo/modulos-y-errores": () => <ModulosYErrores />,
+  "asincronia/event-loop": () => <EventLoop />,
+  "asincronia/promesas": () => <Promesas />,
+  "asincronia/async-await": () => <AsyncAwait />,
+  "asincronia/fetch-y-cancelacion": () => <FetchYCancelacion />,
+  "asincronia/race-conditions-y-debounce": () => <RaceConditionsYDebounce />,
 };
