@@ -1,0 +1,211 @@
+## El problema
+
+Una página de dashboard en un Server Component de Next:
+
+```tsx
+export default async function DashboardPage() {
+  const user = await getUser();                   // ~300 ms
+  const projects = await getProjects();           // ~300 ms
+  const notifications = await getNotifications(); // ~300 ms
+
+  return <Dashboard user={user} projects={projects} notifications={notifications} />;
+}
+```
+
+Funciona, pero tarda **900 ms** cuando podría tardar 300: ninguna petición depende de otra y aun así cada una espera a que termine la anterior (una *cascada* o *waterfall*). Y si el servicio de notificaciones cae, la página entera falla, aunque las notificaciones sean lo menos importante.
+
+Arreglarlo es una línea, pero elegir **qué** línea (`Promise.all`, `allSettled`, un `.catch` en el sitio justo) exige entender qué es una promesa y qué devuelve cada método. El `await` lo verás a fondo en la lección "async/await"; aquí bajamos a lo que hay debajo.
+
+## Qué es una promesa
+
+Una promesa es un objeto que representa un resultado que todavía puede no existir. Siempre está en uno de tres estados:
+
+| Estado | Significa |
+|---|---|
+| `pending` | todavía no hay resultado |
+| `fulfilled` | se cumplió con un valor |
+| `rejected` | se rechazó con un motivo (normalmente un `Error`) |
+
+Cuando deja de estar `pending` se dice que está **asentada** (*settled*), y eso pasa **una sola vez**: una promesa cumplida no puede volver a cumplirse con otro valor ni pasar a rechazada. No hay forma de leer el estado de forma síncrona; solo puedes reaccionar a él con `then`, `catch` o `await`.
+
+Hay dos detalles del constructor que sorprenden:
+
+```js
+const p = new Promise((resolve, reject) => {
+  // este "executor" se ejecuta YA, de forma síncrona
+  resolve(42);
+  console.log("resolve no es un return: esto también se ejecuta");
+});
+```
+
+- El **executor** corre en el momento en que haces `new Promise(...)`, no "más tarde". Lo asíncrono es la reacción (`then`), no la creación.
+- `resolve` y `reject` solo cambian el estado; no cortan la función. Y una vez asentada, las llamadas siguientes se ignoran **sin error**.
+
+<Pregunta id="promesas-executor-sincrono" />
+
+Recuerda lo de "El event loop": los callbacks de `then` siempre van a la cola de **microtareas**, incluso si la promesa ya estaba cumplida. Por eso un `then` nunca se ejecuta en medio de tu código síncrono, y por eso adelanta a cualquier `setTimeout(…, 0)`.
+
+Para crear promesas ya asentadas tienes atajos: `Promise.resolve(valor)` y `Promise.reject(error)`. Si a `Promise.resolve` le pasas una promesa nativa, te devuelve esa misma promesa.
+
+## then devuelve siempre una promesa nueva
+
+Esta es la regla que explica casi todo el encadenamiento:
+
+```js
+const p2 = p1.then(callback);
+// p2 es una promesa DISTINTA de p1
+```
+
+Lo que pase dentro de `callback` decide cómo se asienta `p2`:
+
+| El callback… | p2 queda… |
+|---|---|
+| devuelve un valor `v` | cumplida con `v` |
+| no devuelve nada | cumplida con `undefined` |
+| devuelve una promesa | igual que esa promesa cuando se asiente (se **aplana**) |
+| lanza un error | rechazada con ese error |
+
+La tercera fila es lo que hace que las cadenas sean planas: nunca recibes "una promesa de una promesa". Y la segunda es el bug más común con promesas:
+
+```js
+fetchUser(id)
+  .then((res) => {
+    res.json(); // falta el return
+  })
+  .then((user) => setUser(user)); // user es undefined
+```
+
+Con llaves `{ }` en una arrow function, si no escribes `return`, devuelves `undefined`. La cadena sigue felizmente con `undefined` y la promesa de `res.json()` queda suelta: si falla, nadie se entera.
+
+<Pregunta id="promesas-olvidar-return" />
+
+<Callout type="clave">
+En cada `then` pregúntate: ¿qué devuelve este callback? Eso, y solo eso, es lo que recibe el siguiente eslabón.
+</Callout>
+
+## Errores en la cadena: catch y finally
+
+`p.then(onFulfilled, onRejected)` acepta un segundo callback para el rechazo, y `catch` es exactamente `then(undefined, onRejected)`. Que sea un `then` más tiene dos consecuencias:
+
+1. Un rechazo **atraviesa** todos los `then` sin manejador de error hasta llegar al primer `catch` (o al segundo argumento de un `then`). Lo mismo que un `throw` sube por la pila hasta el `try/catch` más cercano, como viste en "Errores".
+2. Lo que devuelve el `catch` sigue las mismas reglas de la tabla: si devuelve un valor, **la cadena se recupera** y los `then` siguientes se ejecutan con ese valor. Si quieres que el error siga propagándose, vuelve a lanzarlo dentro del `catch`.
+
+Además, cualquier `throw` dentro de un `then` (o un `TypeError` accidental como `user.name` con `user` undefined) no rompe nada de forma síncrona: se convierte en un rechazo de la promesa de ese `then`.
+
+`finally(fn)` se ejecuta en ambos casos y es para limpieza (quitar un spinner, cerrar una conexión, limpiar un timer):
+
+- `fn` **no recibe argumentos**: no sabe si hubo éxito o error.
+- Lo que devuelve **se ignora**: la promesa resultante se asienta igual que la anterior.
+- La excepción: si `fn` lanza (o devuelve una promesa rechazada), el resultado pasa a ser ese rechazo.
+
+<Pregunta id="promesas-catch-finally" />
+
+## Rechazos sin manejar
+
+Si una promesa se rechaza y nadie le ha colgado un manejador, el entorno lo avisa: el navegador dispara el evento `unhandledrejection` y muestra `Uncaught (in promise) Error` en la consola; Node, por defecto, **termina el proceso**. La trampa es que cada `then` crea una rama nueva, y cada rama necesita su propio manejo:
+
+<Pregunta id="promesas-rechazo-sin-manejar" />
+
+La regla práctica: el `catch` va **al final** de la cadena que consumes, y si una función devuelve una promesa, devuélvela (`return`) en lugar de dejarla suelta, para que quien llama pueda manejar su error.
+
+## Promisificar una API de callbacks
+
+Muchas APIs antiguas (y el estilo clásico de Node) usan callbacks `(err, value)`. Convertirlas a promesas es exactamente para lo que sirve el constructor:
+
+```js
+function readConfig(path) {
+  return new Promise((resolve, reject) => {
+    fs.readFile(path, "utf8", (err, text) => {
+      if (err) reject(err);
+      else resolve(text);
+    });
+  });
+}
+```
+
+Fuera del caso de envolver callbacks o timers, casi nunca necesitas `new Promise`: si ya tienes una promesa, encadénala. Envolver una promesa en otra (`new Promise((resolve) => fetch(url).then(resolve))`) es un antipatrón: pierdes el rechazo, que nadie llama a `reject`.
+
+<Callout type="cuidado">
+Las promesas **no se pueden cancelar**. Una promesa representa un trabajo que ya está en marcha; ignorar su resultado no detiene la petición ni el timer. Para cancelar de verdad hace falta otra pieza (`AbortController`), que verás en la lección de fetch y cancelación.
+</Callout>
+
+## Varias promesas a la vez: los combinadores
+
+Volvamos al dashboard. La clave es separar **iniciar** el trabajo de **esperarlo**. Una petición empieza cuando llamas a la función, no cuando haces `await`:
+
+```js
+// Secuencial: cada llamada empieza cuando termina la anterior (~900 ms)
+const user = await getUser();
+const projects = await getProjects();
+
+// Paralelo: las tres empiezan ya y esperamos a todas (~300 ms)
+const [user, projects, notifications] = await Promise.all([
+  getUser(),
+  getProjects(),
+  getNotifications(),
+]);
+```
+
+Secuencial solo tiene sentido cuando una petición necesita el resultado de otra (por ejemplo, `getProjects(user.teamId)`).
+
+Los cuatro combinadores reciben un iterable de promesas (o valores) y devuelven **una** promesa:
+
+| Método | Se cumple cuando… | Se rechaza cuando… | Resultado |
+|---|---|---|---|
+| `Promise.all` | todas se cumplen | **la primera** se rechaza (falla rápido) | array de valores, en el orden de entrada |
+| `Promise.allSettled` | todas se asientan (nunca se rechaza) | nunca | array de `{ status, value }` o `{ status, reason }` |
+| `Promise.race` | la primera que se asienta se cumple | la primera que se asienta se rechaza | el valor o el error de esa primera |
+| `Promise.any` | la primera se cumple | **todas** se rechazan | el primer valor, o un `AggregateError` con `errors` |
+
+Dos detalles que conviene tener muy claros:
+
+- El array de `Promise.all` sigue el **orden de entrada**, no el de llegada. Por eso puedes desestructurarlo con seguridad.
+- "Falla rápido" significa que `all` **deja de esperar**, no que detenga las demás: siguen ejecutándose y sus resultados se descartan.
+
+<Pregunta id="combinadores-all-orden" />
+
+### race para timeouts, any para redundancia
+
+`race` mira la primera promesa que se **asiente**, sea cumplida o rechazada. Su uso típico es ponerle un límite de tiempo a una operación compitiendo contra una promesa que se rechaza con un timer. `any`, en cambio, ignora los rechazos mientras quede alguna opción: sirve para pedir lo mismo a varios espejos y quedarte con el primero que responda bien. Si todas fallan, recibes un `AggregateError` con todos los motivos en `errors`.
+
+<Pregunta id="combinadores-race-any" />
+
+## El dashboard, arreglado
+
+Con todo esto, la versión buena del Server Component:
+
+```tsx
+export default async function DashboardPage() {
+  const [user, projects, notifications] = await Promise.all([
+    getUser(),
+    getProjects(),
+    getNotifications().catch(() => []), // opcionales: si fallan, lista vacía
+  ]);
+
+  return <Dashboard user={user} projects={projects} notifications={notifications} />;
+}
+```
+
+- Las tres peticiones van en paralelo: la página tarda lo que la más lenta.
+- Si falla el usuario o los proyectos, `all` se rechaza y Next muestra el `error.tsx` más cercano: sin esos datos no hay página.
+- Las notificaciones llevan su propio `.catch`, así que su promesa **no puede rechazarse**: un fallo ahí se convierte en `[]`. Es la semántica de `allSettled` aplicada solo donde la quieres, sin tener que desempaquetar `{ status, value }` en todo.
+
+<Callout type="nota">
+La documentación de Next recomienda exactamente este patrón (iniciar las peticiones y esperarlas con `Promise.all`) y sugiere `Promise.allSettled` cuando ninguna petición debe tumbar a las demás. Otra alternativa en Next es no esperar todo en la página y pasar promesas a componentes envueltos en `Suspense`, para que cada parte aparezca cuando llegan sus datos.
+</Callout>
+
+## Práctica
+
+<Ejercicio id="promesas-with-timeout" />
+
+<Ejercicio id="combinadores-dashboard" />
+
+## Resumen
+
+- Una promesa está `pending`, `fulfilled` o `rejected`, y se asienta **una sola vez**. El executor de `new Promise` corre de forma **síncrona**; los `then` siempre como microtareas.
+- `then` devuelve **siempre una promesa nueva**, que se asienta según lo que devuelva el callback: valor, `undefined` si olvidas el `return`, el estado de la promesa devuelta (aplanamiento) o un rechazo si lanza.
+- `catch` es `then(undefined, fn)`: si devuelve un valor, la cadena se recupera. `finally` no recibe valor ni lo cambia, salvo que lance.
+- Cada rama de una promesa necesita su manejo de errores; un rechazo sin manejar acaba en `unhandledrejection`.
+- `new Promise` sirve para promisificar callbacks y timers; las promesas no se cancelan.
+- `all`: todas o falla rápido, resultados en orden de entrada. `allSettled`: espera todas y te da cada estado. `race`: la primera en asentarse. `any`: la primera en cumplirse, o `AggregateError`.
+- Inicia en paralelo lo que no depende entre sí; ningún combinador detiene las promesas que deja de esperar.

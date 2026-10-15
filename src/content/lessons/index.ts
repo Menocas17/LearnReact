@@ -7,6 +7,11 @@ import { objetosArraysJson } from "./js-fundamentos/objetos-arrays-json/leccion"
 import { metodosDeArray } from "./js-fundamentos/metodos-de-array/leccion";
 import { destructuringYSpread } from "./js-fundamentos/destructuring-y-spread/leccion";
 import { closures } from "./js-profundo/closures/leccion";
+import { eventLoop } from "./asincronia/event-loop/leccion";
+import { promesas } from "./asincronia/promesas/leccion";
+import { asyncAwait } from "./asincronia/async-await/leccion";
+import { fetchYCancelacion } from "./asincronia/fetch-y-cancelacion/leccion";
+import { raceConditionsYDebounce } from "./asincronia/race-conditions-y-debounce/leccion";
 import { scopeYHoisting } from "./js-profundo/scope-y-hoisting/leccion";
 import { valoresYReferencias } from "./js-profundo/valores-y-referencias/leccion";
 import { thisLesson } from "./js-profundo/this/leccion";
@@ -33,6 +38,11 @@ export const lessons: readonly LessonDef[] = [
   prototiposYClases,
   objetosYColecciones,
   modulosYErrores,
+  eventLoop,
+  promesas,
+  asyncAwait,
+  fetchYCancelacion,
+  raceConditionsYDebounce,
 ];
 
 /**
