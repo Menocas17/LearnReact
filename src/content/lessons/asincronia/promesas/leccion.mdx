@@ -14,7 +14,7 @@ export default async function DashboardPage() {
 
 Funciona, pero tarda **900 ms** cuando podría tardar 300: ninguna petición depende de otra y aun así cada una espera a que termine la anterior (una *cascada* o *waterfall*). Y si el servicio de notificaciones cae, la página entera falla, aunque las notificaciones sean lo menos importante.
 
-Arreglarlo es una línea, pero elegir **qué** línea (`Promise.all`, `allSettled`, un `.catch` en el sitio justo) exige entender qué es una promesa y qué devuelve cada método. El `await` lo verás a fondo en la lección "async/await"; aquí bajamos a lo que hay debajo.
+Arreglarlo es una línea, pero elegir **qué** línea (`Promise.all`, `allSettled`, un `.catch` en el sitio justo) exige entender qué es una promesa y qué devuelve cada método. El `await` lo verás a fondo en la lección "async/await y errores asíncronos"; aquí bajamos a lo que hay debajo.
 
 ## Qué es una promesa
 
@@ -87,7 +87,7 @@ En cada `then` pregúntate: ¿qué devuelve este callback? Eso, y solo eso, es l
 
 `p.then(onFulfilled, onRejected)` acepta un segundo callback para el rechazo, y `catch` es exactamente `then(undefined, onRejected)`. Que sea un `then` más tiene dos consecuencias:
 
-1. Un rechazo **atraviesa** todos los `then` sin manejador de error hasta llegar al primer `catch` (o al segundo argumento de un `then`). Lo mismo que un `throw` sube por la pila hasta el `try/catch` más cercano, como viste en "Errores".
+1. Un rechazo **atraviesa** todos los `then` sin manejador de error hasta llegar al primer `catch` (o al segundo argumento de un `then`). Lo mismo que un `throw` sube por la pila hasta el `try/catch` más cercano, como viste en "Módulos y errores".
 2. Lo que devuelve el `catch` sigue las mismas reglas de la tabla: si devuelve un valor, **la cadena se recupera** y los `then` siguientes se ejecutan con ese valor. Si quieres que el error siga propagándose, vuelve a lanzarlo dentro del `catch`.
 
 Además, cualquier `throw` dentro de un `then` (o un `TypeError` accidental como `user.name` con `user` undefined) no rompe nada de forma síncrona: se convierte en un rechazo de la promesa de ese `then`.
@@ -123,7 +123,7 @@ function readConfig(path) {
 }
 ```
 
-Fuera del caso de envolver callbacks o timers, casi nunca necesitas `new Promise`: si ya tienes una promesa, encadénala. Envolver una promesa en otra (`new Promise((resolve) => fetch(url).then(resolve))`) es un antipatrón: pierdes el rechazo, que nadie llama a `reject`.
+Fuera del caso de envolver callbacks o timers, casi nunca necesitas `new Promise`: si ya tienes una promesa, encadénala. Envolver una promesa en otra (`new Promise((resolve) => fetch(url).then(resolve))`) es un antipatrón: si `fetch` falla, nadie llama a `reject`, así que la promesa exterior se queda pendiente para siempre y el rechazo interior queda sin manejar.
 
 <Callout type="cuidado">
 Las promesas **no se pueden cancelar**. Una promesa representa un trabajo que ya está en marcha; ignorar su resultado no detiene la petición ni el timer. Para cancelar de verdad hace falta otra pieza (`AbortController`), que verás en la lección de fetch y cancelación.
@@ -137,6 +137,7 @@ Volvamos al dashboard. La clave es separar **iniciar** el trabajo de **esperarlo
 // Secuencial: cada llamada empieza cuando termina la anterior (~900 ms)
 const user = await getUser();
 const projects = await getProjects();
+const notifications = await getNotifications();
 
 // Paralelo: las tres empiezan ya y esperamos a todas (~300 ms)
 const [user, projects, notifications] = await Promise.all([

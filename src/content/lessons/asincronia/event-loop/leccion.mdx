@@ -17,7 +17,7 @@ function ExportButton({ rows }) {
 }
 ```
 
-El "Exportando…" no aparece nunca. Durante un segundo y medio la página no responde: el botón no cambia, el hover no funciona, los clicks se pierden. Luego todo vuelve de golpe. Mover `setExporting(true)` a un `setTimeout(…, 0)` o a un `Promise.resolve().then(…)` "a ver si así" tampoco arregla nada, o lo arregla a medias.
+El "Exportando…" no aparece nunca. Durante un segundo y medio la página no responde: el botón no cambia, el hover no funciona, los clicks no responden (se quedan esperando y se procesan después). Luego todo vuelve de golpe. Mover el cálculo a un `setTimeout(…, 0)` o a un `Promise.resolve().then(…)` "a ver si así" tampoco lo arregla, o lo arregla a medias.
 
 Para entender por qué tienes que saber qué hace el navegador entre línea y línea de tu código. Y la respuesta corta es: **nada**. JavaScript corre en un solo hilo y el navegador solo puede pintar cuando tu código suelta ese hilo. El mecanismo que decide qué se ejecuta después es el **event loop**.
 
@@ -113,7 +113,7 @@ Un callback es una función que le pasas a otra para que la llame ella. Que sea 
 
 ```js
 const ids = [3, 1, 2];
-const sorted = ids.map((id) => id * 2);   // map llama al callback YA, 3 veces, y luego retorna
+const dobles = ids.map((id) => id * 2);   // map llama al callback YA, 3 veces, y luego retorna
 setTimeout(() => console.log("tarde"), 0); // setTimeout retorna YA; el callback irá en otra tarea
 ```
 
@@ -134,7 +134,7 @@ clearInterval(poll);
 Lo que nadie te cuenta del retardo:
 
 - **Es un mínimo, no una garantía.** Cuando vence, el callback solo se encola como tarea. Si el hilo está ocupado, espera lo que haga falta.
-- **`0` no es inmediato.** Significa "en la siguiente tarea disponible", siempre después del código síncrono y de las microtareas pendientes. Node lo convierte en 1 ms; los navegadores imponen un mínimo de 4 ms cuando los timers se anidan muchos niveles, y en pestañas en segundo plano los ralentizan hasta un segundo o más.
+- **`0` no es inmediato.** Significa "en la siguiente tarea disponible", siempre después del código síncrono y de las microtareas pendientes. Node lo convierte en 1 ms; los navegadores imponen un mínimo de 4 ms cuando los timers se anidan (a partir del quinto nivel de un `setTimeout` que programa otro), y en pestañas en segundo plano los limitan a una ejecución por segundo aproximadamente, o incluso menos.
 - **Los timers con el mismo retardo se ejecutan en el orden en que se crearon.** Con retardos distintos, el orden depende del tiempo y de lo cargado que esté el hilo.
 
 <Pregunta id="callbacks-retardo-minimo" />
@@ -155,7 +155,7 @@ Ahora el bug del principio tiene explicación: `setExporting(true)`, el cálculo
 
 ### Tareas largas e INP
 
-Una tarea que ocupa el hilo más de 50 ms se considera una **tarea larga**. Mientras dura, un click del usuario se queda esperando en la cola, y cuando por fin se procesa, su resultado no se ve hasta el siguiente pintado. Eso es lo que mide **INP** (*Interaction to Next Paint*), una de las Core Web Vitals: el tiempo desde la interacción hasta el siguiente frame. Un bucle síncrono de 1,5 s dentro de un handler es un INP de más de 1,5 s.
+Una tarea que ocupa el hilo más de 50 ms se considera una **tarea larga**. Mientras dura, un click del usuario se queda esperando en la cola, y cuando por fin se procesa, su resultado no se ve hasta el siguiente pintado. Eso es lo que mide **INP** (*Interaction to Next Paint*), una de las Core Web Vitals: el tiempo desde la interacción hasta el siguiente frame. Un bucle síncrono de 1,5 s dentro de un handler es una interacción que tarda más de 1,5 s en verse, y el INP de la página lo refleja.
 
 La solución, sin Web Workers, es **trocear** el trabajo: procesar un bloque, ceder el hilo con una tarea nueva y seguir.
 
@@ -171,7 +171,7 @@ async function procesar(filas) {
 }
 ```
 
-`scheduler.yield()` hace lo mismo con una ventaja: la continuación se pone por delante de otras tareas pendientes, así que tu trabajo no queda al final de la cola. No está en todos los navegadores, así que se usa comprobando si existe y recurriendo a `setTimeout` si no.
+`scheduler.yield()` hace lo mismo con una ventaja: la continuación se pone por delante de otras tareas pendientes de la misma prioridad, así que tu trabajo no queda al final de la cola. No está en todos los navegadores, así que se usa comprobando si existe y recurriendo a `setTimeout` si no.
 
 <Pregunta id="render-trocear-trabajo" />
 
@@ -183,9 +183,9 @@ Un truco habitual: para ejecutar algo **después** de que el navegador haya pint
 
 ### Por qué React agrupa las actualizaciones
 
-Todo esto explica una decisión de React que ya conoces de React: dentro de un handler, varias llamadas a `setX` no producen varios renders, sino **uno** al terminar (*batching*). Tiene sentido: mientras tu handler se ejecuta, el navegador no puede pintar, así que renderizar entre `setA(1)` y `setB(2)` sería trabajo que nadie vería nunca. React encola las actualizaciones y renderiza una vez cuando el handler termina; desde React 18 hace lo mismo con las que ocurren en timeouts y promesas.
+Todo esto explica una decisión que ya conoces de React: dentro de un handler, varias llamadas a `setX` no producen varios renders, sino **uno** al terminar (*batching*). Tiene sentido: mientras tu handler se ejecuta, el navegador no puede pintar, así que renderizar entre `setA(1)` y `setB(2)` sería trabajo que nadie vería nunca. React encola las actualizaciones y renderiza una vez cuando el handler termina; desde React 18 hace lo mismo con las que ocurren en timeouts y promesas.
 
-Por la misma razón, `useLayoutEffect` se ejecuta tras actualizar el DOM pero antes de que el navegador pinte (dentro de la misma tarea, bloqueándolo), mientras que `useEffect` normalmente se ejecuta después del pintado.
+Por la misma razón, `useLayoutEffect` se ejecuta tras actualizar el DOM pero antes de que el navegador pinte (dentro de la misma tarea, bloqueándolo), mientras que `useEffect` normalmente se ejecuta después del pintado. La excepción: si la actualización viene de una interacción discreta (un click, una tecla), React puede ejecutar los efectos antes de que el navegador pinte, así que no cuentes con que `useEffect` siempre deje ver el estado intermedio.
 
 <Callout type="clave">
 El pintado ocurre entre tareas, nunca durante una ni entre microtareas. Si quieres que el usuario vea algo antes de un trabajo pesado, tienes que soltar el hilo con una tarea nueva; y si el trabajo es largo, trocéalo.

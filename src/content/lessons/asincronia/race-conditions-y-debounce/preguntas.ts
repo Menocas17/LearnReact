@@ -147,7 +147,7 @@ setTimeout(() => save("d"), 800);         // t = 800
     concepts: ["async.debounce-throttle"],
     difficulty: "trampa",
     prompt:
-      "La misma ráfaga de eventos pasa por un throttle y por un debounce, ambos de 300 ms. ¿Qué imprime?",
+      "La misma ráfaga de eventos pasa por un throttle y por un debounce, ambos de 600 ms. ¿Qué imprime?",
     code: code("js", `
 function throttle(fn, ms) {
   let waiting = false;
@@ -166,9 +166,9 @@ function debounce(fn, ms) {
   };
 }
 
-const t = throttle((e) => console.log("T:" + e), 300);
-const d = debounce((e) => console.log("D:" + e), 300);
-const events = [["a", 0], ["b", 100], ["c", 200], ["d", 400], ["e", 500], ["f", 900]];
+const t = throttle((e) => console.log("T:" + e), 600);
+const d = debounce((e) => console.log("D:" + e), 600);
+const events = [["a", 0], ["b", 200], ["c", 400], ["d", 800], ["e", 1000], ["f", 1800]];
 for (const [name, at] of events) {
   setTimeout(() => { t(name); d(name); }, at);
 }
@@ -181,7 +181,7 @@ for (const [name, at] of events) {
     ),
     correct: "a",
     explanation:
-      "Throttle ejecuta en el acto y luego ignora durante 300 ms: a (t = 0) pasa, b y c caen en la ventana, d (t = 400) pasa y abre otra ventana hasta 700 que se traga a e, y f (t = 900) pasa. Debounce solo ejecuta tras 300 ms de silencio: el timer de c (para 500) lo cancela d en 400; el de e (para 800) llega a cumplirse antes de f, así que imprime D:e en t = 800; f imprime D:f en t = 1200. Throttle garantiza un ritmo; debounce espera a que la ráfaga termine.",
+      "Throttle ejecuta en el acto y luego ignora durante 600 ms: a (t = 0) pasa, b y c caen en la ventana, d (t = 800) pasa y abre otra ventana hasta 1400 que se traga a e, y f (t = 1800) pasa. Debounce solo ejecuta tras 600 ms de silencio: el timer de c (para 1000) lo cancela d en 800; el de e (para 1600) llega a cumplirse antes de f, así que imprime D:e en t = 1600; f imprime D:f en t = 2400. Throttle garantiza un ritmo; debounce espera a que la ráfaga termine.",
   },
   {
     id: "debounce-recreado-en-render",

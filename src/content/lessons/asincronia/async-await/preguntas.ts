@@ -182,12 +182,12 @@ useEffect(async () => {
 `),
     options: opts(
       "Ninguno: React espera a que la promesa se resuelva antes de volver a ejecutar el efecto",
-      "Que el callback async devuelve una promesa, y React espera que un efecto devuelva nada o una función de limpieza: no hay limpieza posible y React lo advierte en desarrollo",
+      "Que el callback async devuelve una promesa, y React espera que un efecto no devuelva nada o devuelva una función de limpieza: no hay limpieza posible y React lo advierte en desarrollo",
       "Que el await bloquea el render del componente hasta que llega la respuesta",
       "Que el fetch se ejecuta dos veces por cada cambio de query, una por cada await",
     ),
     correct: "b",
     explanation:
-      "Lo que devuelve el callback de useEffect se interpreta como la función de limpieza. Una función async siempre devuelve una promesa, así que React recibe algo que no es una función y lo advierte en desarrollo. Además pierdes la limpieza, que es justo lo que necesitas para ignorar respuestas de un query anterior. React no espera la promesa ni bloquea el render: el efecto corre después de pintar. El patrón correcto es declarar una función async dentro del efecto, llamarla y devolver una limpieza normal.",
+      "Lo que devuelve el callback de useEffect se interpreta como la función de limpieza. Una función async siempre devuelve una promesa, así que React recibe algo que no es una función y lo advierte en desarrollo; y cuando intente limpiar el efecto (al cambiar query, al desmontar o en el doble montaje de Strict Mode) llamará a esa promesa como si fuera una función y lanzará un TypeError. Además pierdes la limpieza, que es justo lo que necesitas para ignorar respuestas de un query anterior. React no espera la promesa ni bloquea el render: el efecto se ejecuta después del commit, y cada cambio de query lanza un solo fetch. El patrón correcto es declarar una función async dentro del efecto, llamarla y devolver una limpieza normal.",
   },
 ];

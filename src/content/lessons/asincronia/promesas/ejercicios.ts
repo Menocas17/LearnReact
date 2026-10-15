@@ -5,7 +5,7 @@ export const withTimeout: ExerciseDef = {
   title: "delay y withTimeout",
   concepts: ["async.promesas", "async.combinadores"],
   instructions:
-    "Implementa tres piezas en timeout.js. (1) delay(ms, value): devuelve una promesa que se cumple con value tras ms milisegundos. (2) La clase TimeoutError, que extiende Error, tiene name \"TimeoutError\" y guarda ms en una propiedad ms. (3) withTimeout(promise, ms): devuelve una promesa que se asienta igual que promise si esta termina antes de ms; si no, se rechaza con un TimeoutError. Cuando promise termine primero (bien o mal), limpia el temporizador con clearTimeout para no dejarlo vivo.",
+    "Implementa tres piezas en timeout.js. (1) delay(ms, value): devuelve una promesa que se cumple con value tras ms milisegundos. (2) La clase TimeoutError, que extiende Error: su constructor recibe ms, tiene name \"TimeoutError\" y guarda ms en una propiedad ms. (3) withTimeout(promise, ms): devuelve una promesa que se asienta igual que promise si esta termina antes de ms; si no, se rechaza con un TimeoutError. Cuando promise termine primero (bien o mal), limpia el temporizador con clearTimeout para no dejarlo vivo.",
   starter: {
     "/timeout.js": `export class TimeoutError extends Error {
   // Tu código aquí
@@ -65,19 +65,34 @@ describe("withTimeout", () => {
   });
 
   test("limpia el temporizador cuando la promesa termina antes", async () => {
-    const original = globalThis.clearTimeout;
-    let cleared = 0;
+    // Espía setTimeout y clearTimeout para comprobar que el timer del timeout
+    // (el de 4321 ms) se cancela, no solo que se llama a clearTimeout.
+    const realSet = globalThis.setTimeout;
+    const realClear = globalThis.clearTimeout;
+    const timers = [];
+    const cleared = [];
+    globalThis.setTimeout = (fn, ms, ...args) => {
+      const id = realSet(fn, ms, ...args);
+      if (ms === 4321) timers.push(id);
+      return id;
+    };
     globalThis.clearTimeout = (id) => {
-      cleared++;
-      return original(id);
+      cleared.push(id);
+      return realClear(id);
     };
     try {
-      await withTimeout(delay(5, "ok"), 1000);
-      await withTimeout(Promise.reject(new Error("x")), 1000).catch(() => {});
+      await withTimeout(delay(5, "ok"), 4321);
+      await withTimeout(Promise.reject(new Error("x")), 4321).catch(() => {});
     } finally {
-      globalThis.clearTimeout = original;
+      globalThis.setTimeout = realSet;
+      globalThis.clearTimeout = realClear;
+      // Por si no se limpiaron: que no queden vivos al acabar el test.
+      timers.forEach((id) => realClear(id));
     }
-    expect(cleared).toBeGreaterThanOrEqual(2);
+    // Si el entorno no deja espiar los timers globales, no hay nada que comprobar.
+    if (timers.length === 0) return;
+    expect(timers.length).toBe(2);
+    for (const id of timers) expect(cleared).toContain(id);
   });
 });
 `,

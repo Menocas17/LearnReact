@@ -155,6 +155,6 @@ button.addEventListener("click", () => {
     ),
     correct: "c",
     explanation:
-      "Lo que bloquea es una tarea larga: mientras corre, el navegador no puede atender clicks ni pintar. El executor de new Promise se ejecuta de forma síncrona, y una función async también lo es hasta su primer await, así que ninguna de las dos trocea nada. requestAnimationFrame solo cambia cuándo empieza el bucle (justo antes del pintado), pero ese frame igualmente se retrasa 2 segundos. Trocear el trabajo en tareas cortas deja huecos para que el navegador responda y pinte.",
+      "Lo que bloquea es una tarea larga: mientras corre, el navegador no puede atender clicks ni pintar. El executor de new Promise se ejecuta de forma síncrona, y una función async también lo es hasta su primer await, así que ninguna de las dos trocea nada. requestAnimationFrame solo cambia cuándo empieza el bucle (justo antes del pintado), pero ese frame igualmente se retrasa lo que dure el bucle. Trocear el trabajo en tareas cortas deja huecos para que el navegador responda y pinte.",
   },
 ];

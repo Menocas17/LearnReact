@@ -95,7 +95,7 @@ async function save(data) {
 }
 ```
 
-Regla práctica: dentro de un `try`, toda promesa cuyo fallo quieras manejar va con `await`, incluida la del `return` (`return await`). Fuera de un `try`, `return promesa` y `return await promesa` se comportan igual.
+Regla práctica: dentro de un `try`, toda promesa cuyo fallo quieras manejar va con `await`, incluida la del `return` (`return await`). Fuera de un `try`, `return promesa` y `return await promesa` dan el mismo resultado.
 
 ## finally también espera (y también se ejecuta con return)
 
@@ -165,7 +165,7 @@ const posts = await getPosts(id);
 const [user, posts] = await Promise.all([getUser(id), getPosts(id)]);
 ```
 
-`Promise.all` no "lanza" nada en paralelo: recibe promesas que ya están en marcha y espera a todas. Devuelve los resultados en el orden del array (no en el orden en que terminan) y rechaza con el **primer** error, sin esperar al resto. Si necesitas todos los resultados aunque alguno falle, en "Combinadores de promesas" verás `Promise.allSettled`; en el primer ejercicio lo vas a construir a mano.
+`Promise.all` no "lanza" nada en paralelo: recibe promesas que ya están en marcha y espera a todas. Devuelve los resultados en el orden del array (no en el orden en que terminan) y rechaza con el **primer** error, sin esperar al resto. Si necesitas todos los resultados aunque alguno falle, existe `Promise.allSettled`, que ya viste en "Promesas"; en el primer ejercicio vas a construir algo parecido a mano.
 
 <Pregunta id="async-secuencial-vs-paralelo" />
 
@@ -187,7 +187,7 @@ Es lo que usan las preguntas de esta lección. Ojo con lo que implica: **los mó
 
 ## async en useEffect
 
-El callback de `useEffect` no puede ser async. No es una regla arbitraria de React: lo que devuelve el efecto se interpreta como su **función de limpieza**, y una función async siempre devuelve una promesa.
+El callback de `useEffect` no puede ser async. No es una regla arbitraria de React: lo que devuelve el efecto se interpreta como su **función de limpieza**, y una función async siempre devuelve una promesa. React lo advierte en desarrollo y, cuando toca limpiar el efecto, intenta llamar a esa promesa como si fuera una función, lo que lanza un `TypeError`.
 
 <Pregunta id="async-useeffect-async" />
 

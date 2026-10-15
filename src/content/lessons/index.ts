@@ -50,7 +50,7 @@ export const lessons: readonly LessonDef[] = [
  * publicado esté cubierto por al menos una lección, una pregunta y un ejercicio.
  * Se añade un módulo aquí cuando está completo.
  */
-export const publishedModules: readonly string[] = ["m02", "m03"];
+export const publishedModules: readonly string[] = ["m02", "m03", "m05"];
 
 export function lessonsForModule(moduleId: string): LessonDef[] {
   return lessons.filter((l) => l.moduleId === moduleId);

@@ -20,7 +20,7 @@ export const asyncAwait: LessonDef = {
       channel: "Fireship",
       lang: "en",
       focus:
-        "Repaso visual y rápido; fíjate en la comparación entre esperar dentro de un bucle (en serie) y lanzar todas las promesas y esperarlas juntas con Promise.all.",
+        "Repaso rápido y visual de async/await. Míralo después de la lección y comprueba que reconoces lo que has visto aquí: microtareas, manejo de errores y ejecución en serie frente a en paralelo.",
     },
   ],
   sources: [
