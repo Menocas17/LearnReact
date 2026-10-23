@@ -8,9 +8,9 @@ export const valoresYReferencias: LessonDef = {
   slug: "valores-y-referencias",
   title: "Valores y referencias",
   summary:
-    "Por qué todos.push + setTodos(todos) no repinta la lista: primitivos que se copian, objetos que se comparten y cómo actualizar estado anidado sin mutarlo.",
+    "Un ticket con tres bugs de React y una sola causa: variables como fichas que llevan a cajas compartidas, comparación por identidad y cómo copiar solo el camino para actualizar estado sin mutarlo.",
   concepts: ["js.valor-referencia", "js.inmutabilidad"],
-  minutes: 40,
+  minutes: 45,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
