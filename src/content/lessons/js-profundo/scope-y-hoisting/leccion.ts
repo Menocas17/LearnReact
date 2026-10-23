@@ -8,9 +8,9 @@ export const scopeYHoisting: LessonDef = {
   slug: "scope-y-hoisting",
   title: "Scope y hoisting",
   summary:
-    "Por qué un archivo de componentes revienta con \"Cannot access 'X' before initialization\": dónde vive cada variable y desde cuándo se puede usar.",
+    "Un refactor que rompe la app con \"Cannot access 'X' before initialization\": las salas donde vive cada variable, los casilleros que se instalan antes de ejecutar (hoisting) y el precinto de let y const (TDZ), hasta los imports circulares.",
   concepts: ["js.scope", "js.hoisting-tdz"],
-  minutes: 35,
+  minutes: 45,
   questions: preguntas,
   exercises: ejercicios,
   videos: [

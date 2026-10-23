@@ -1,6 +1,7 @@
-## El bug
+## Un refactor que rompió la app entera
 
-Reorganizas un archivo de componentes para que quede "más ordenado": primero el componente exportado, abajo los helpers y las constantes.
+Es viernes y ordenas un archivo de componentes: primero lo que se exporta, abajo los helpers y
+las constantes. Solo mueves líneas.
 
 ```jsx
 export const DEFAULT_THEME = buildTheme("light");
@@ -20,35 +21,118 @@ Recargas y la app entera muestra una pantalla de error:
 ReferenceError: Cannot access 'buildTheme' before initialization
 ```
 
-Otro día, sin tocar ningún archivo de forma sospechosa, aparece el mismo error con una constante que **importas** de otro módulo. Mueves un `import` de sitio y desaparece. Parece magia, pero es JavaScript siguiendo dos reglas muy concretas: **dónde vive cada variable** (scope) y **desde cuándo se puede usar** (hoisting y TDZ).
+Lo deshaces y funciona. El lunes aparece esto en el tablero:
 
-## Scope: dónde vive una variable
+> **#362 — "Pantalla en blanco al arrancar".** Mismo error, pero ahora con `colors`, una
+> constante que `Button.js` **importa** de `tokens.js`. Nadie tocó esos archivos. Alguien
+> movió un `import` en otro y el error desapareció.
 
-El scope es la región del código donde un identificador es visible. En JavaScript hay tres niveles que te importan:
+No es magia: son dos reglas muy concretas: **dónde vive cada variable**
+(scope) y **desde cuándo se puede usar** (hoisting y TDZ). Al final vas a poder responder:
 
-- **Global** (o de módulo): lo declarado en el nivel superior del archivo. En un módulo ES, cada archivo tiene su propio scope de módulo; lo que no exportas no lo ve nadie más.
-- **De función**: cada función crea un scope con sus parámetros y variables.
-- **De bloque**: cada `{ … }` (de un `if`, un `for`, o un bloque suelto) crea un scope para las variables declaradas con `let`, `const` y `class`.
+1. ¿Por qué el error dice "before initialization" y no "is not defined", si `buildTheme` está
+   en el mismo archivo?
+2. ¿Por qué `App` usa `DEFAULT_THEME` sin problema, y la primera línea no puede usar
+   `buildTheme`?
+3. ¿Por qué un `import` que no cambió puede fallar según el orden de **otros** `import`?
+
+---
+
+## Dos épocas de un mismo lenguaje
+
+Hasta ES2015, el estándar de JavaScript tenía una sola forma de declarar variables: `var`. Y
+`var` no conoce los bloques: una variable declarada dentro de un `if` o un `for` pertenece a la
+**función entera**. Las llaves agrupaban instrucciones, pero no creaban un espacio propio para
+variables.
+
+Además, el lenguaje te deja llamar a una función antes de la línea donde la escribes. Eso
+permite ordenar un archivo como quieras, o que dos funciones se llamen entre sí sin preocuparte
+de cuál va primero. Para que funcione, el motor tiene que **registrar las declaraciones de un
+scope antes de ejecutar su código**. Y `var` entra en ese mismo registro previo, aunque con un
+valor de partida más pobre: `undefined`.
+
+Con ES2015 (la edición antes llamada ES6) llegaron `let`, `const` y
+`class`, con scope de **bloque**. También se registran antes, pero el comité tuvo que decidir
+qué pasa si alguien las usa antes de su línea. Repetir lo de `var` habría sido fácil, pero
+piensa en lo que significaría para una `const`: tendría **dos** valores a lo largo de su vida,
+`undefined` y el de verdad, y una constante que cambia de valor no es una constante. Se eligió lo
+contrario: usarlas antes de tiempo **lanza un error**. Ese tramo prohibido es la **TDZ**, y es
+exactamente lo que te encontraste el viernes.
+
+---
+
+## Las salas y sus casilleros
+
+Para el resto de la lección, piensa en el programa como un edificio de
+**salas**, unas dentro de otras: el módulo es la sala grande, cada función es una sala dentro de
+ella, y cada bloque `{ … }` es un cubículo dentro de una sala.
+
+Cada variable es un **casillero con una etiqueta** que está en una sala concreta. Eso es el
+**scope**: la región del código donde un identificador es visible. Hay tres niveles que te
+importan:
+
+- **Global** (o de módulo): lo declarado en el nivel superior del archivo. En un módulo ES, cada
+  archivo tiene su propia sala; lo que no exportas no lo ve nadie más.
+- **De función**: cada función crea una sala con sus parámetros y variables.
+- **De bloque**: cada `{ … }` (de un `if`, un `for` o un bloque suelto) crea un cubículo para las
+  variables declaradas con `let`, `const` y `class`.
 
 ```js
-const app = "tienda";          // scope de módulo
+const app = "tienda";          // sala del módulo
 
-function checkout(items) {     // items: scope de la función
-  const total = items.length;  // scope de la función
+function checkout(items) {     // items: sala de la función
+  const total = items.length;  // sala de la función
   if (total > 0) {
-    const mensaje = "ok";      // scope del bloque if
+    const mensaje = "ok";      // cubículo del if
   }
   // mensaje no existe aquí
 }
 ```
 
-### Resolución de identificadores
+### Buscar un casillero
 
-Cuando el código usa un nombre, JavaScript lo busca en el scope actual; si no está, sube al scope que lo **contiene en el texto** del programa, y así hasta el de módulo y el global. Si no lo encuentra en ninguno, lanza `ReferenceError: x is not defined`. Que la cadena dependa de dónde está **escrito** el código y no de quién lo llama es lo que significa **scope léxico** (la base de los closures, que verás en su propia lección).
+Cuando el código usa un nombre, JavaScript busca un casillero con esa etiqueta en la sala
+actual; si no está, sale a la sala que la **contiene en el plano**, es decir, en el texto del
+programa, y así hasta el módulo y el global. Si no lo encuentra en ninguna, lanza
+`ReferenceError: x is not defined`. Que el recorrido dependa de dónde está **escrito** el código
+y no de quién lo llama es lo que significa **scope léxico**: es la misma búsqueda que hace
+funcionar los closures de la lección anterior.
 
-### Shadowing
+<AntesDeSeguir>
 
-Si un scope interno declara un nombre que ya existe fuera, el interno **tapa** al externo dentro de su región. La búsqueda se detiene en el primero que encuentra:
+`pantalla` tiene su propio `tema` y llama a `leerTema`. ¿Qué imprime?
+
+```js
+const tema = "claro";
+function leerTema() {
+  return tema;
+}
+function pantalla() {
+  const tema = "oscuro";
+  return leerTema();
+}
+console.log(pantalla());
+```
+
+<Respuesta>
+
+```
+claro
+```
+
+La sala de `leerTema` está escrita dentro del módulo, no dentro de `pantalla`. Al no encontrar
+`tema` en su sala, `leerTema` sale a la del módulo. El casillero `tema` de `pantalla` está en
+otra sala por la que la búsqueda nunca pasa, aunque sea `pantalla` quien llama.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### Dos casilleros con la misma etiqueta
+
+Si una sala interna declara un nombre que ya existe fuera, el casillero interno **tapa** al
+externo dentro de su región: es el **shadowing**. La búsqueda se detiene en el primero que
+encuentra.
 
 ```js
 const user = "Ana";
@@ -59,23 +143,66 @@ function Perfil() {
 }
 ```
 
-El shadowing es legal y a veces útil, pero es fuente de bugs cuando no te das cuenta de que lo estás haciendo (por ejemplo, un parámetro `data` que tapa un `data` del módulo).
+Es legal, pero es fuente de bugs cuando no te das cuenta (por ejemplo, un parámetro `data` que tapa un `data` del módulo).
 
-### var: scope de función, no de bloque
+### var atraviesa los tabiques
 
-`var` es anterior a `let`/`const` y **ignora los bloques**: una variable `var` pertenece a la función entera (o al módulo, si está en el nivel superior), aunque la escribas dentro de un `if` o un `for`.
+`var` es de la primera época, e **ignora los cubículos**: su casillero se coloca en la sala de
+la función entera (o del módulo, si está en el nivel superior), aunque la escribas dentro de un
+`if` o un `for`. Esta pregunta pone a prueba justo esa diferencia entre `var` y `let`:
 
 <Pregunta id="scope-var-sale-del-bloque" />
 
-Esto tiene una consecuencia peligrosa: escribir `var x` dentro de un bloque **no crea una variable nueva** si ya hay otra `x` con `var` en la función; es la misma. Con `let` o `const` en el bloque sí tendrías una nueva (shadowing), y redeclarar con `let` en el mismo scope es directamente un `SyntaxError`.
+Y tiene una consecuencia peligrosa.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+function f() {
+  var x = 1;
+  if (true) {
+    var x = 2;
+  }
+  let y = 1;
+  if (true) {
+    let y = 2;
+  }
+  console.log(x, y);
+}
+f();
+```
+
+<Respuesta>
+
+```
+2 1
+```
+
+El `var x` del bloque **no crea un casillero nuevo**: ya hay uno con esa etiqueta en la sala de
+`f`, y es el mismo. Asignarle `2` pisa el de fuera. El `let y` del bloque, en cambio, pone un
+casillero nuevo en el cubículo (shadowing) que desaparece al cerrarlo. Y si intentaras redeclarar
+con `let` en la misma sala (`let y = 1; let y = 2;`), ni siquiera llegaría a ejecutarse: es un
+`SyntaxError`.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 <Callout type="nota">
 En código moderno (y en cualquier proyecto de React) usa `const` por defecto y `let` cuando necesites reasignar. Vas a ver `var` en código antiguo, en snippets de Stack Overflow y en bibliotecas viejas, así que necesitas saber leerlo.
 </Callout>
 
-## Hoisting: qué existe antes de su línea
+---
 
-Antes de ejecutar un scope (un módulo, una función, un bloque), JavaScript recorre sus declaraciones y crea los bindings correspondientes. A eso se le llama informalmente **hoisting** ("elevación"): es como si las declaraciones subieran al principio de su scope. Lo que cambia según el tipo de declaración es **con qué valor** nace cada binding:
+## Antes de abrir la sala: el hoisting
+
+Ahora la segunda capa. Antes de ejecutar una sala (un módulo, una función, un bloque),
+JavaScript recorre sus declaraciones e instala **todos sus casilleros**. A eso se le llama
+informalmente **hoisting** ("elevación"): es como si las declaraciones subieran al principio de
+su scope. Lo que cambia según el tipo de declaración es **qué hay dentro** del casillero cuando
+se instala:
 
 | Declaración | Antes de su línea |
 |---|---|
@@ -84,60 +211,235 @@ Antes de ejecutar un scope (un módulo, una función, un bloque), JavaScript rec
 | `let`, `const`, `class` | Existe, pero **sin inicializar** (TDZ) |
 | `import` | Enlazado a la variable del otro módulo |
 
+La línea de una declaración, cuando la ejecución llega a ella, no crea el casillero: solo **mete
+el valor**. Esta pregunta pone a prueba las dos primeras filas de la tabla:
+
 <Pregunta id="hoisting-var-y-function" />
 
-Por eso puedes llamar a una function declaration antes de escribirla, y por eso un `var` leído antes de tiempo da `undefined` en silencio en lugar de un error (lo cual suele esconder bugs).
+Por eso puedes llamar a una function declaration antes de escribirla, y por eso un `var` leído
+antes de tiempo da `undefined` en silencio en lugar de un error. Ese silencio suele esconder
+bugs que aparecen lejos de su causa.
 
-## TDZ: la zona muerta temporal
+### El casillero precintado: la TDZ
 
-Las variables `let`, `const` y `class` también se crean al principio de su scope, pero quedan **sin inicializar** hasta que la ejecución llega a su declaración. Ese tramo se llama **temporal dead zone** (TDZ). Cualquier lectura o escritura en la TDZ lanza:
+Los casilleros de `let`, `const` y `class` se instalan igual, pero **precintados**: quedan sin
+inicializar hasta que la ejecución llega a su declaración. Ese tramo se llama **temporal dead
+zone** (TDZ, zona muerta temporal). Cualquier intento de abrir el casillero en la TDZ lanza:
 
 ```text
 ReferenceError: Cannot access 'X' before initialization
 ```
 
-Fíjate en la diferencia con `X is not defined`: este último significa "no hay ninguna variable con ese nombre"; el de la TDZ significa "existe, pero todavía no se ha ejecutado su línea". Ni siquiera `typeof` se libra:
+Fíjate en la diferencia con `X is not defined`: este último significa "no hay ningún casillero
+con esa etiqueta en todo el recorrido"; el de la TDZ significa "el casillero existe, pero
+todavía no se ha ejecutado su línea". Es la respuesta a la primera pregunta del ticket.
+
+<AntesDeSeguir>
+
+Leer está prohibido, pero ¿y escribir? ¿Qué imprime?
+
+```js
+function f() {
+  try {
+    contador = 1;
+  } catch (e) {
+    console.log(e.message);
+  }
+  let contador = 0;
+  console.log(contador);
+}
+f();
+```
+
+<Respuesta>
+
+```
+Cannot access 'contador' before initialization
+0
+```
+
+El precinto vale para leer **y** para escribir. La asignación encuentra el casillero `contador`
+de la sala de `f` y no puede tocarlo. Con `var` habría funcionado en silencio.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Antes de ES2015, `typeof nombre` era la forma segura de preguntar "¿existe esto?": con un nombre
+no declarado devuelve `"undefined"` sin lanzar. La TDZ añadió una excepción. Esta pregunta comprueba si distingues un nombre que no existe de uno precintado:
 
 <Pregunta id="hoisting-typeof-tdz" />
 
-La TDZ y el shadowing se combinan de una forma que sorprende: la variable interna tapa a la externa en **todo** su scope, también en las líneas anteriores a su declaración.
+### ¿Por qué no cae al casillero de fuera?
+
+Junta las dos capas: una sala interna con un `const` que se llama igual que uno externo, y un
+acceso **antes** de la línea del `const`. Podrías pensar que, como el interno aún no está listo,
+la búsqueda sigue hacia fuera. No lo hace: el casillero interno se instaló al abrir la sala, así
+que tapa al externo en **toda** la sala, también en las líneas anteriores a su declaración.
+
+Es la otra cara de la decisión de ES2015: un mismo nombre dentro de una sala se refiere siempre
+al mismo casillero. Si la búsqueda cayera hacia fuera, `user` significaría una variable en unas
+líneas y otra distinta en las siguientes. Comprueba que lo has visto venir:
 
 <Pregunta id="scope-shadowing-tdz" />
 
-### Es temporal, no de posición
+### Temporal, no de posición
 
-Lo que importa es **cuándo se ejecuta** el acceso, no dónde está escrito. Una función puede mencionar una `const` que se declara más abajo, siempre que la **llames** después de que esa `const` se inicializó.
+Lo que importa es **cuándo se ejecuta** el acceso, no dónde está escrito. Una función puede
+mencionar una `const` que se declara más abajo; lo que decide es si el precinto ya se quitó
+cuando la función **se llama**.
+
+<AntesDeSeguir>
+
+La misma función, llamada dos veces. ¿Qué imprime?
+
+```js
+function etiqueta() {
+  return "IVA " + IVA + "%";
+}
+try {
+  console.log(etiqueta());
+} catch (e) {
+  console.log(e.message);
+}
+const IVA = 21;
+console.log(etiqueta());
+```
+
+<Respuesta>
+
+```
+Cannot access 'IVA' before initialization
+IVA 21%
+```
+
+En la primera llamada, `IVA` sigue precintado; en la segunda, su línea ya se ejecutó.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Y aquí está la clave para las arrow functions y las function expressions:
+`const format = (n) => …` es una **variable** a la que se asigna una función. Su casillero sigue
+las reglas de `const` (precintado hasta su línea), no las de una function declaration. Si la
+asignas a un `var`, antes de su línea el casillero contiene `undefined`, y llamarla da
+`TypeError: … is not a function`. Esta pregunta mezcla los dos casos:
 
 <Pregunta id="hoisting-arrow-y-var" />
 
-Y aquí está la clave para las arrow functions y las function expressions: `const format = (n) => …` es una **variable** a la que se asigna una función. Se comporta como cualquier `const` (TDZ hasta su línea), no como una function declaration. Si la asignas a un `var`, antes de su línea vale `undefined` y llamarla da `TypeError: … is not a function`.
+<Profundiza titulo="script clásico frente a módulo">
 
-## El bug, explicado
+Todo lo anterior se comporta igual en un `<script>` clásico y en un módulo ES, pero hay
+diferencias en la sala de más arriba. Un módulo siempre está en **modo estricto**, y su nivel
+superior es una sala propia:
 
-Vuelve al archivo del principio. Un archivo de componentes es un **módulo ES**: se ejecuta una vez, de arriba abajo, cuando alguien lo importa por primera vez (y en modo estricto). Al evaluarlo:
+- En un script clásico, un `var` de nivel superior se convierte en propiedad del objeto global
+  (`window.x` en el navegador); `let` y `const` no. En un módulo, ninguno de los tres.
+- En un script sin modo estricto, asignar a un nombre no declarado (`sinDeclarar = 2`) crea una
+  variable global sin avisar. En un módulo lanza `ReferenceError: sinDeclarar is not defined`.
+- Una function declaration dentro de un bloque tiene scope de bloque en modo estricto. Sin modo
+  estricto, por compatibilidad con código antiguo, también es visible fuera del bloque.
 
-1. `palettes` y `buildTheme` ya existen como bindings, pero están en la TDZ.
-2. La línea 1 ejecuta `buildTheme("light")` **en el nivel superior**, inmediatamente. `buildTheme` está en la TDZ: `ReferenceError`.
+En la especificación, cada sala es un *Environment Record* y la instalación de casilleros es la
+fase de *declaration instantiation* que precede a la ejecución de cada scope.
 
-`App` no tiene el problema: aunque use `DEFAULT_THEME`, React la llama mucho después, cuando el módulo ya terminó de evaluarse. Cada render es una llamada a función que ocurre cuando todo el nivel superior ya está inicializado. El peligro está solo en el código que se **ejecuta al cargar el módulo**: constantes calculadas, `createContext(valorPorDefecto)`, `styled(…)`, objetos de configuración que llaman a helpers.
+</Profundiza>
+
+---
+
+## El ticket, resuelto
+
+Vuelve al archivo del viernes. Un archivo de componentes es un **módulo ES**: se ejecuta una vez,
+de arriba abajo, cuando alguien lo importa por primera vez (y en modo estricto). Al evaluarlo:
+
+1. Se instalan los casilleros: `palettes` y `buildTheme` existen, pero precintados.
+2. La línea 1 ejecuta `buildTheme("light")` **en el nivel superior**, inmediatamente.
+   `buildTheme` está en la TDZ: `ReferenceError`.
+
+Esa es la segunda pregunta. `App` no tiene el problema: aunque use `DEFAULT_THEME`, React la
+llama después, cuando el módulo ya terminó de evaluarse. Cada render es una llamada a
+función que ocurre cuando todo el nivel superior ya está inicializado. El peligro está solo en el
+código que se **ejecuta al cargar el módulo**: constantes calculadas,
+`createContext(valorPorDefecto)`, `styled(…)`, objetos de configuración que llaman a helpers.
+
+<AntesDeSeguir>
+
+Un compañero propone el arreglo rápido: convertir `buildTheme` en function declaration, que
+existe completa desde el principio. ¿Funciona?
+
+```js
+export const DEFAULT_THEME = buildTheme("light");
+
+const palettes = { light: { bg: "#fff" }, dark: { bg: "#111" } };
+
+function buildTheme(name) {
+  return { name, ...palettes[name] };
+}
+```
+
+<Respuesta>
+
+No. Cambia el mensaje:
+
+```text
+ReferenceError: Cannot access 'palettes' before initialization
+```
+
+`buildTheme` ya existe en la línea 1, así que la llamada arranca. Pero dentro lee `palettes`,
+que sigue precintado porque su línea aún no se ha ejecutado.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 Hay dos arreglos razonables:
 
-- Ordenar el archivo para que cada valor de nivel superior se calcule **después** de todo lo que necesita.
-- Convertir los helpers en function declarations, **si** no dependen a su vez de `const` declaradas más abajo (si `buildTheme` lee `palettes`, sigue fallando aunque sea una function declaration).
+- Ordenar el archivo para que cada valor de nivel superior se calcule **después** de todo lo que
+  necesita.
+- Convertir los helpers en function declarations, **si** no dependen a su vez de `const`
+  declaradas más abajo, como acabas de ver.
 
-### Imports circulares
+### Imports circulares: casilleros con ventanilla
 
-Cuando un módulo se carga, primero se evalúan sus dependencias y después su propio cuerpo. Si `A` importa `B` y `B` importa `A`, uno de los dos tiene que ejecutarse antes de que el otro haya terminado. Los `import` son **enlaces vivos** a las variables del otro módulo: si esa variable es una `const` que aún no se ejecutó, está en su TDZ.
+Queda la tercera pregunta, y para ella falta la última fila de la tabla. Un `import` no copia el
+valor del otro módulo: es un casillero con una **ventanilla** que da al casillero del otro
+archivo. Son **enlaces vivos**: ves lo que haya allí en cada momento, también el precinto.
+
+Cuando un módulo se carga, primero se evalúan sus dependencias y después su propio cuerpo. Si `A`
+importa `B` y `B` importa `A`, uno de los dos tiene que ejecutarse antes de que el otro haya
+terminado. Si a través de la ventanilla ves una `const` cuya línea aún no se ejecutó, está en su
+TDZ. Esta pregunta es el ticket #362 tal cual:
 
 <Pregunta id="hoisting-import-circular" />
 
-Si en ese mismo ejemplo el punto de entrada importara `Button.js` primero, el orden se invertiría: `tokens.js` se evaluaría antes y su `variants = { primary: Button }` funcionaría, porque `Button` es una function declaration (ya está inicializada al enlazar los módulos). Por eso los ciclos parecen "funcionar a veces": depende de qué archivo se cargue primero. En proyectos de React esto aparece típicamente con archivos barrel (`index.js` que reexporta todo) o con componentes que importan constantes de un archivo que a su vez importa componentes.
+<AntesDeSeguir>
+
+Ahora el punto de entrada importa `Button.js` primero y después `tokens.js`, con los mismos dos
+archivos. ¿Qué pasa?
+
+<Respuesta>
+
+Funciona. Al cargar `Button.js`, su dependencia `tokens.js` se evalúa antes que su cuerpo. Allí,
+`variants = { primary: Button }` mira por la ventanilla a `Button`, que es una function
+declaration: ya estaba completa desde que se enlazaron los módulos. Cuando después se ejecuta el
+cuerpo de `Button.js`, `colors` ya tiene su valor.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Por eso los ciclos parecen "funcionar a veces": depende de qué archivo se cargue primero. Y por
+eso mover un `import` en otro archivo hizo desaparecer el error del ticket: cambió **el orden de
+los `import` entre sí**, que decide qué módulo del ciclo se evalúa primero. En proyectos de React
+esto aparece típicamente con archivos barrel (`index.js` que reexporta todo) o con componentes
+que importan constantes de un archivo que a su vez importa componentes.
 
 Arreglos, de mejor a peor:
 
-- **Romper el ciclo**: mover lo compartido (`colors`) a un módulo que no importe a nadie del ciclo.
-- **No leer imports en el nivel superior**: usar `colors.primary` dentro de la función, que se ejecuta más tarde.
+- **Romper el ciclo**: mover lo compartido (`colors`) a un módulo que no importe a nadie del
+  ciclo.
+- **No leer imports en el nivel superior**: usar `colors.primary` dentro de la función, que se
+  ejecuta más tarde.
 - Evitar que los componentes importen desde el barrel de su propia carpeta.
 
 <Callout type="cuidado">
@@ -154,17 +456,34 @@ Errores comunes:
 Cada variable existe en **todo** su scope desde el principio; lo que cambia es su valor inicial: la función completa (`function`), `undefined` (`var`) o "sin inicializar" (`let`, `const`, `class`). El error "Cannot access 'X' before initialization" siempre significa lo mismo: algo **se ejecutó** antes que la línea que inicializa `X`. Busca qué código corre en el nivel superior del módulo o qué ciclo de imports invierte el orden.
 </Callout>
 
-## Práctica
+---
+
+## Práctica: limpiar lo que dejó `var`
+
+Mientras revisabas el ticket, QA abrió otro: el resumen de pedidos muestra un total disparatado
+y, sin cupón, el total sale `NaN`. El código es de la primera época, todo con `var`. Este
+ejercicio pone a prueba si reconoces los dos bugs que vienen de que `var` atraviese los
+cubículos y se instale como `undefined`:
 
 <Ejercicio id="scope-resumen-pedidos" />
 
+Y para cerrar el ticket #362, un módulo de temas que, como el archivo del viernes, revienta en
+cuanto alguien lo importa. Aquí se pone a prueba el orden de inicialización del nivel superior,
+incluida la trampa de la function declaration que lee una `const` precintada:
+
 <Ejercicio id="scope-orden-de-inicializacion" />
 
-## Resumen
+---
 
-- El scope es **léxico**: un identificador se busca en el scope donde está escrito y luego en los que lo contienen, hasta el global.
-- `let`, `const` y `class` tienen scope de **bloque**; `var` tiene scope de **función** e ignora los bloques.
-- Una declaración interna con el mismo nombre hace **shadowing** de la externa en todo su scope.
-- Hoisting: las function declarations existen completas desde el inicio; `var` existe como `undefined`; `let`/`const`/`class` existen pero en la **TDZ** hasta su línea.
-- Una arrow o function expression asignada a `const` sigue las reglas de `const`, no las de una function declaration.
-- La TDZ es temporal: el problema es **ejecutar** un acceso antes de la inicialización, típicamente en el nivel superior de un módulo o en un ciclo de imports.
+## Lo que ahora puedes explicar
+
+Si alguien en tu equipo dice que `let` y `const` "no tienen hoisting", sabes corregirlo: el casillero existe desde que se abre la sala, solo que precintado, y por eso una
+`const` interna tapa a la externa incluso antes de su línea. Sabes leer los dos `ReferenceError`
+y distinguir "no existe" de "todavía no", sabes que el scope se decide en el plano del código y
+no en quién llama, y sabes por qué un archivo de React puede romperse por una línea que se
+ejecuta al importarlo mientras sus componentes, llamados más tarde, nunca tienen el problema.
+
+Hay algo que hasta ahora has dado por sentado: **qué hay dentro** del casillero. Con `const`, el
+casillero no se puede reasignar, pero si guarda un objeto, ese objeto sí puede cambiar. Lo que
+un casillero guarda en realidad, un valor o una referencia, y por qué eso decide cuándo React
+detecta que algo cambió, es la siguiente lección: valores y referencias.
