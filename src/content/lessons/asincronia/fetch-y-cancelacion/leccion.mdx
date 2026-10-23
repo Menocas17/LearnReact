@@ -44,7 +44,7 @@ Casi todo lo que sorprende de `fetch` es una decisión de diseño. Para verlo, m
 
 ## Antes de fetch: XMLHttpRequest
 
-Durante años, la forma de pedir datos desde JavaScript sin recargar la página fue `XMLHttpRequest` (XHR). Microsoft lo creó para la versión web de Outlook y lo incluyó en Internet Explorer 5; los demás navegadores copiaron la idea y acabó estandarizado. A pesar del nombre, nunca fue solo para XML: hoy casi siempre transporta JSON.
+Durante años, la forma de pedir datos desde JavaScript sin recargar la página fue `XMLHttpRequest` (XHR). La idea nació en Microsoft, en el equipo de la versión web de Outlook, y llegó con Internet Explorer 5 como un componente ActiveX; los demás navegadores la copiaron con el nombre `XMLHttpRequest` y acabó estandarizada. A pesar del nombre, nunca fue solo para XML: hoy casi siempre transporta JSON.
 
 ```js
 const xhr = new XMLHttpRequest();
@@ -62,9 +62,9 @@ xhr.send();
 
 Fíjate en los comentarios: ahí está el origen de la primera pregunta. Ya en XHR el evento `load` se dispara con **cualquier** respuesta HTTP, y `error` queda para cuando no hubo respuesta. Para el navegador, "el servidor contestó que no existe" es una conversación que salió bien. Decidir si ese "no existe" es un error de tu aplicación siempre fue cosa tuya.
 
-Los problemas de XHR eran otros: un único objeto mutable con petición, estado (`readyState`) y respuesta, y callbacks que se anidaban al encadenar peticiones. Por eso `$.ajax` de jQuery o axios nacieron como envoltorios de XHR.
+Los problemas de XHR eran otros: un único objeto mutable con petición, estado (`readyState`) y respuesta, y callbacks que se anidaban al encadenar peticiones. Por eso se popularizaron envoltorios como `$.ajax` de jQuery o axios, que en el navegador usa XHR por debajo (en Node usa el módulo `http`, y hoy también puede usar `fetch`).
 
-`fetch`, definido por el WHATWG en su estándar Fetch en la época en que las promesas llegaban al lenguaje con ES2015, cambió tres cosas:
+`fetch`, definido en el estándar Fetch del WHATWG, llegó a los navegadores en la misma época en que las promesas entraban en el lenguaje con ES2015. Cambió tres cosas:
 
 - **Devuelve una promesa**, así que `await`, `Promise.all` y todo lo de las lecciones anteriores sale gratis.
 - **Separa las piezas** en `Request`, `Response` y `Headers`, clases que usan también los Service Workers, la Cache API, Node (que trae `fetch` global desde la versión 18) y los Route Handlers de Next.
@@ -74,22 +74,22 @@ Lo que **no** cambió fue la regla de XHR: un 404 es una respuesta, no un fallo.
 
 ---
 
-## El mensajero
+## El repartidor
 
-Para el resto de la lección usa esta imagen: `fetch` es **mandar a un mensajero** a una oficina con una nota. Tú te quedas con un **resguardo**, que es la promesa: no es el resultado, solo te avisa cuando el mensajero vuelve. Y el trabajo del mensajero es **traerte una respuesta**, no juzgarla.
+Para el resto de la lección, mira de cerca al **repartidor** de la cocina de "El event loop": `fetch` es mandarlo al proveedor con una nota. Tú te quedas con un **localizador**, el de "Promesas": no es el resultado, solo se enciende cuando el repartidor vuelve. Y el trabajo del repartidor es **traerte una respuesta**, no juzgarla.
 
-Si vuelve con un sobre, la promesa **se cumple**, diga el sobre "aquí tienes a Ana" (200), "no existe" (404) o "se nos quemó la oficina" (500). La promesa **se rechaza** solo cuando no pudo traer ninguna respuesta:
+Si vuelve con un sobre, la promesa **se cumple**, diga el sobre "aquí tienes a Ana" (200), "no existe" (404) o "se nos quemó el almacén" (500). La promesa **se rechaza** solo cuando no pudo traer ninguna respuesta:
 
 - un **error de red**: sin conexión, el DNS no resuelve, el servidor no acepta la conexión (un `TypeError`; en Chrome, `Failed to fetch`);
 - una petición **inválida** antes de salir, como una URL mal formada (también `TypeError`);
 - un **bloqueo por CORS**: el navegador no te deja ver la respuesta y lo trata como un error de red;
 - la petición **se cancela** con una señal, que es la última parte de la lección.
 
-CORS es un guardia en la puerta de tu edificio: el mensajero puede haber vuelto con la respuesta, pero si la oficina no autorizó a tu origen a leerla, el guardia la confisca y a ti te dice lo mismo que si se hubiera perdido.
+CORS es un guardia en la puerta de tu edificio: el repartidor puede haber vuelto con la respuesta, pero si el proveedor no autorizó a tu origen a leerla, el guardia la confisca y a ti te dice lo mismo que si se hubiera perdido.
 
 <Profundiza titulo="por qué CORS se disfraza de error de red">
 
-Es deliberado. Si tu código pudiera distinguir "el servidor no existe" de "existe pero no me deja leer", cualquier página podría usar `fetch` para sondear qué servicios hay en la red interna de quien la visita. El motivo real solo aparece en la consola de las herramientas de desarrollo, que tu código no puede leer.
+Es deliberado: el estándar Fetch convierte un fallo de CORS en el mismo error de red que cualquier otro, para no filtrar nada de una respuesta que tu página no tiene permiso de ver. Si tu código pudiera distinguir "el servidor no existe" de "existe pero no me deja leer", una página cualquiera obtendría pistas sobre servicios a los que no tiene acceso, como los de la red interna de quien la visita. El motivo real solo aparece en la consola de las herramientas de desarrollo, que tu código no puede leer.
 
 Y un detalle que conecta con el final de la lección: en las peticiones "simples" (un `GET`, ciertos `POST`) el navegador **sí** envía la petición y solo bloquea la lectura de la respuesta, así que el servidor pudo procesarla. En las demás, primero envía una comprobación (`OPTIONS`, el *preflight*).
 
@@ -120,7 +120,7 @@ try {
 perfil: undefined
 ```
 
-El mensajero volvió con un sobre: la promesa se cumple, `res.json()` parsea un JSON válido y `perfil.name` es `undefined`. Nadie lanza nada y React pinta el perfil vacío del ticket.
+El repartidor volvió con un sobre: la promesa se cumple, `res.json()` parsea un JSON válido y `perfil.name` es `undefined`. Nadie lanza nada y React pinta el perfil vacío del ticket.
 
 </Respuesta>
 
@@ -153,7 +153,7 @@ Con `status` en el error puedes decidir: un 401 redirige al login, un 404 muestr
 
 <Callout type="clave">
 
-`fetch` resuelto significa "el mensajero volvió con una respuesta", no "salió bien". Comprueba `res.ok` (o `res.status`) en un solo sitio y convierte las respuestas no exitosas en errores.
+`fetch` resuelto significa "el repartidor volvió con una respuesta", no "salió bien". Comprueba `res.ok` (o `res.status`) en un solo sitio y convierte las respuestas no exitosas en errores.
 
 </Callout>
 
@@ -161,7 +161,7 @@ Con `status` en el error puedes decidir: un 401 redirige al login, un 404 muestr
 
 ## La nota y el sobre
 
-Amplía la imagen. Lo que le das al mensajero es una **nota** (la petición), escrita con el segundo argumento de `fetch`:
+Amplía la imagen. Lo que le das al repartidor es una **nota** (la petición), escrita con el segundo argumento de `fetch`:
 
 ```js
 const res = await fetch("/api/tareas", {
@@ -172,7 +172,7 @@ const res = await fetch("/api/tareas", {
 });
 ```
 
-El mensajero solo sabe empaquetar ciertos tipos: un string, `FormData`, `Blob`, `URLSearchParams` y algunos más. Un objeto de JavaScript no es uno de ellos.
+El repartidor solo sabe empaquetar ciertos tipos: un string, `FormData`, `Blob`, `URLSearchParams` y algunos más. Un objeto de JavaScript no es uno de ellos.
 
 <AntesDeSeguir>
 
@@ -207,7 +207,7 @@ El sobre también tiene dos partes, y llegan en momentos distintos:
 ```js
 const res = await fetch("/api/perfil"); // llegan status y cabeceras
 res.status;      // 404
-res.statusText;  // "Not Found" (puede venir vacío en HTTP/2)
+res.statusText;  // "Not Found" (en HTTP/2 suele venir vacío: el protocolo no lo transmite)
 res.ok;          // true solo si status está entre 200 y 299
 res.headers.get("content-type"); // "application/json; charset=utf-8"
 
@@ -216,7 +216,7 @@ const data = await res.json();          // el cuerpo: OTRA promesa
 
 ### Las páginas se leen una vez
 
-El mensajero vuelve con la carátula (status y cabeceras) y **el contenido te lo pasa página a página** según le llega. Tú lees cada página y la sueltas; nadie guarda copia, porque eso obligaría a tener la respuesta entera en memoria, justo lo que el stream evita.
+El repartidor vuelve con la carátula (status y cabeceras) y **el contenido te lo pasa página a página** según le llega. Tú lees cada página y la sueltas; nadie guarda copia, porque eso obligaría a tener la respuesta entera en memoria, justo lo que el stream evita.
 
 Por eso `json()`, `text()` y `blob()` son asíncronos, y por eso **el cuerpo solo se puede consumir una vez**. Muerde cuando quieres "loguear el texto y luego parsear". La siguiente pregunta pone a prueba qué pasa con una segunda lectura:
 
@@ -300,7 +300,7 @@ En el App Router también usas `fetch` en el servidor: en un Server Component (`
 
 - En el servidor no hay "origen actual": las URLs tienen que ser absolutas.
 - No hay navegador que adjunte las cookies del usuario. Si llamas a una API que las necesita, las reenvías tú.
-- Llamar desde un Server Component a un Route Handler de tu propia app es un salto HTTP innecesario: llama directamente a la función que lee los datos.
+- Llamar desde un Server Component a un Route Handler de tu propia app es un salto HTTP innecesario (y, si la página se prerrenderiza en el build, falla: no hay servidor escuchando). Llama directamente a la función que lee los datos.
 
 Cómo cachea Next esas peticiones es tema del módulo de Next.js.
 
@@ -308,15 +308,15 @@ Cómo cachea Next esas peticiones es tema del módulo de Next.js.
 
 ## ¿Por qué no se puede cancelar una promesa?
 
-Segunda pregunta del caso. Clic en Ana, clic en Luis: salen dos mensajeros. Vuelve antes el de Luis; luego el de Ana, y su `.then(setPerfil)` la pinta encima. Lo primero que se te ocurre es cancelar la promesa. No se puede, y no es un olvido.
+Segunda pregunta del caso. Clic en Ana, clic en Luis: salen dos repartidores. Vuelve antes el de Luis; luego el de Ana, y su `.then(setPerfil)` la pinta encima. Lo primero que se te ocurre es cancelar la promesa. No se puede, y no es un olvido.
 
-El resguardo **solo sirve para enterarse**, y se puede repartir: la misma promesa puede estar en un `Promise.all`, en una caché y en dos componentes. Si cualquiera pudiera cancelar el encargo, le rompería el resultado a los demás. Es la separación de la lección de promesas: quien la crea tiene `resolve` y `reject`; quien la recibe solo observa.
+El localizador **solo sirve para enterarse**, y se puede repartir: la misma promesa puede estar en un `Promise.all`, en una caché y en dos componentes. Si cualquiera pudiera cancelar el encargo, le rompería el resultado a los demás. Es la separación que viste en "Promesas": quien la crea tiene `resolve` y `reject`; quien la recibe solo observa.
 
 En TC39, el comité que diseña JavaScript, hubo una propuesta de promesas cancelables y se retiró. `fetch` salió sin forma de cancelar, y cuando llegó la solución no se metió ni en las promesas ni en `fetch`: se definió en el estándar DOM como un mecanismo **genérico**.
 
 ### El walkie-talkie: AbortController y AbortSignal
 
-La solución respeta la misma separación de poderes. Antes de mandar al mensajero le das un **receptor** de walkie-talkie y te quedas con el **emisor**:
+La solución respeta la misma separación de poderes. Antes de mandar al repartidor le das un **receptor** de walkie-talkie y te quedas con el **emisor**:
 
 - `AbortController` es el **emisor**: lo tiene quien decide cancelar y expone `abort(reason?)`.
 - `AbortSignal` (`controller.signal`) es el **receptor**: se lo pasas a quien hace el trabajo. Solo escucha: tiene `aborted`, `reason` y emite el evento `"abort"`.
@@ -334,7 +334,7 @@ Al abortar, la promesa de `fetch` rechaza con el `reason` de la señal: si no pa
 
 <AntesDeSeguir>
 
-Pulsas el emisor **antes** de mandar al mensajero. ¿Qué imprime, y en qué orden?
+Pulsas el emisor **antes** de mandar al repartidor. ¿Qué imprime, y en qué orden?
 
 ```js
 const controller = new AbortController();
@@ -354,7 +354,7 @@ fetch llamado
 rechazada: AbortError
 ```
 
-`fetch` mira la señal antes de enviar nada y, como ya está abortada, la petición **ni siquiera sale**. Aun así `"fetch llamado"` va primero: el `catch` es una microtarea y, como viste en el event loop, nunca corre en medio del script.
+`fetch` mira la señal antes de enviar nada y, como ya está abortada, la petición **ni siquiera sale**. Aun así `"fetch llamado"` va primero: el `catch` es una microtarea y, como viste en "El event loop", nunca corre en medio del script.
 
 </Respuesta>
 
@@ -464,13 +464,13 @@ Una cancelación no es un fallo. Si no filtras `err.name === "AbortError"` en el
 
 </Callout>
 
-react.dev también muestra una alternativa sin `AbortController`: una variable `ignore` que la limpieza pone en `true` y que se comprueba antes de `setState`. Evita la carrera, pero la petición sigue viva y consume red: rompes tu resguardo mientras el mensajero sigue caminando. Abortar hace las dos cosas. Y para datos de servidor en una app real, react.dev recomienda no escribir esto a mano: un framework (Server Components en Next) o una librería de caché como TanStack Query, que le pasa un `signal` a tu `queryFn` y lo aborta por ti.
+react.dev también muestra una alternativa sin `AbortController`: una variable `ignore` que la limpieza pone en `true` y que se comprueba antes de `setState`. Evita la carrera, pero la petición sigue viva y consume red: tiras el localizador mientras el repartidor sigue caminando. Abortar hace las dos cosas. Y para datos de servidor en una app real, react.dev recomienda no escribir esto a mano: un framework (Server Components en Next) o una librería de caché como TanStack Query, que le pasa un `signal` a tu `queryFn` y lo aborta por ti.
 
 ---
 
 ## Lo que abortar no hace
 
-Tercera pregunta. Cuando pulsas el emisor, el mensajero da media vuelta, pero si ya entregó la nota, **la oficina ya la tiene**. Abortar es una decisión **del cliente**: deja de esperar, cierra la conexión si sigue abierta y rechaza la promesa. HTTP no tiene un "deshacer": si la petición ya llegó al servidor, este puede terminarla igualmente. Esta pregunta pone a prueba si separas lo que pasa en tu lado de lo que pasa en el servidor:
+Tercera pregunta. Cuando pulsas el emisor, el repartidor da media vuelta, pero si ya entregó la nota, **el proveedor ya la tiene**. Abortar es una decisión **del cliente**: deja de esperar, corta la transferencia si sigue en curso y rechaza la promesa. HTTP no tiene un "deshacer": si la petición ya llegó al servidor, este puede terminarla igualmente. Esta pregunta pone a prueba si separas lo que pasa en tu lado de lo que pasa en el servidor:
 
 <Pregunta id="abort-no-deshace" />
 
@@ -482,9 +482,9 @@ Para lecturas (`GET`) da igual: tiras la respuesta y listo. Para escrituras (`PO
 
 **¿Por qué con un 500 el error dice `<` y con un 404 no hay error?** La promesa de `fetch` se cumple con **cualquier** respuesta HTTP, como el `load` de XHR. El 500 traía HTML y `res.json()` falló al parsearlo; el 404 traía JSON válido y se pintó un perfil sin `name`. El arreglo es `apiFetch`: comprueba `res.ok`, lee el cuerpo una vez y lanza un `HttpError` con el status.
 
-**¿Cómo se le dice a una petición "ya no me interesa"?** No cancelando la promesa, que es un resguardo compartible, sino con un `AbortController` por petición, su `signal` en `fetch` y `controller.abort()` en la limpieza del efecto. La petición de Ana rechaza con `AbortError`, su `then` nunca pinta y el `catch` la ignora.
+**¿Cómo se le dice a una petición "ya no me interesa"?** No cancelando la promesa, que es un localizador que cualquiera puede tener, sino con un `AbortController` por petición, su `signal` en `fetch` y `controller.abort()` en la limpieza del efecto. La petición de Ana rechaza con `AbortError`, su `then` nunca pinta y el `catch` la ignora.
 
-**¿Qué le pasa a la petición cancelada?** En tu lado, todo: la promesa rechaza y la conexión se cierra si seguía abierta. En el servidor, posiblemente nada. Para leer un perfil da igual; para un pago, no.
+**¿Qué le pasa a la petición cancelada?** En tu lado, todo: la promesa rechaza y la transferencia se corta si seguía en curso. En el servidor, posiblemente nada. Para leer un perfil da igual; para un pago, no.
 
 ---
 
@@ -504,6 +504,6 @@ El segundo lleva el walkie-talkie a un buscador: una espera cancelable que cumpl
 
 Si alguien pregunta por qué `fetch` "no lanza con un 404", ya no contestas "porque sí": es la regla que ya tenía XHR, para HTTP un 404 es una conversación que salió bien, y por eso cada aplicación necesita un sitio como `apiFetch` donde decide qué es un error. Sabes que el cuerpo es un stream que se lee una vez y que un `SyntaxError` en la monitorización puede ser un 500 disfrazado.
 
-También sabes por qué una promesa no se cancela (es un resguardo que cualquiera puede tener) y cómo se cancela de verdad: un emisor para quien decide, un receptor para quien trabaja, uno por operación. Y sabes dónde acaba su poder: en tu lado de la conexión.
+También sabes por qué una promesa no se cancela (es un localizador que cualquiera puede tener) y cómo se cancela de verdad: un emisor para quien decide, un receptor para quien trabaja, uno por operación. Y sabes dónde acaba su poder: en tu lado de la conexión.
 
 Pero el ticket #531 escondía algo más general que `fetch`: operaciones asíncronas que se solapan y terminan en un orden que no controlas. Eso es una **race condition**, y aparece igual en un buscador que muestra resultados viejos o en un botón que guarda dos veces. En la siguiente lección las verás con líneas de tiempo, junto con **debounce** y **throttle**, para controlar cuántas peticiones salen en primer lugar.

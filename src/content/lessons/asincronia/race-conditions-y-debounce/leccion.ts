@@ -39,6 +39,9 @@ export const raceConditionsYDebounce: LessonDef = {
     { title: "MDN: Debounce", url: "https://developer.mozilla.org/en-US/docs/Glossary/Debounce" },
     { title: "MDN: Throttle", url: "https://developer.mozilla.org/en-US/docs/Glossary/Throttle" },
     { title: "MDN: AbortController", url: "https://developer.mozilla.org/en-US/docs/Web/API/AbortController" },
+    { title: "Wikipedia: Race condition", url: "https://en.wikipedia.org/wiki/Race_condition" },
+    { title: "RFC 9110: Idempotent Methods", url: "https://www.rfc-editor.org/rfc/rfc9110#name-idempotent-methods" },
+    { title: "Stripe: Idempotent requests", url: "https://docs.stripe.com/api/idempotent_requests" },
   ],
-  reviewed: { date: "2026-10-14", versions: { react: "19.3", node: "22" } },
+  reviewed: { date: "2026-10-23", versions: { react: "19.3", node: "22" } },
 };

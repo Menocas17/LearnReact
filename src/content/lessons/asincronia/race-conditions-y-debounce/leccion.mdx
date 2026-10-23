@@ -82,7 +82,7 @@ Un solo hilo te protege **dentro** de un tramo síncrono. Cada `await` es una co
 
 En electrónica, el término ya se usaba en los años cincuenta; por ejemplo, aparece en la tesis doctoral de David A. Huffman de 1954 sobre la síntesis de circuitos de conmutación secuenciales.
 
-Las bases de datos, que siempre atendieron a muchos clientes a la vez, pusieron nombre a los patrones más comunes. El del cajero es un *check-then-act* (comprobar y luego actuar, con un hueco en medio); el del stock, más adelante, una **actualización perdida** (*lost update*). Su respuesta clásica, transacciones y operaciones atómicas, es la que aplicarás en el servidor.
+La programación concurrente puso nombre a los patrones más comunes. El del cajero es un *check-then-act* (comprobar y luego actuar, con un hueco en medio); el del stock, más adelante, una **actualización perdida** (*lost update*), un término clásico de las bases de datos, que siempre atendieron a muchos clientes a la vez. Su respuesta, transacciones y operaciones atómicas, es la que aplicarás en el servidor.
 
 </Profundiza>
 
@@ -92,9 +92,9 @@ Las bases de datos, que siempre atendieron a muchos clientes a la vez, pusieron 
 
 Vuelve a la cocina del event loop: **un solo cocinero** (el hilo), el riel de comandas (las tareas) y las notas pegadas a la comanda actual (las microtareas). Ahora fíjate en una pieza que ya estaba ahí: **los repartidores**.
 
-Cada `fetch` es un repartidor que sale a buscar algo al proveedor, por su cuenta, en paralelo. Si la función hace `await`, el cocinero aparta ese plato con una nota ("cuando vuelva el repartidor, sigue por aquí") y atiende otras comandas.
+Cada `fetch` es un repartidor que sale a buscar algo al proveedor, por su cuenta, en paralelo. Si la función hace `await`, el cocinero pone un marcapáginas en esa ficha, la aparta y atiende otras comandas; cuando vuelve el repartidor, una nota adhesiva le recuerda que la retome.
 
-Lo que el cocinero **no** controla es cuánto tarda cada repartidor. En la red, cada petición es independiente: puede pasar por un servidor distinto o por una caché, y su consulta puede ser más cara ("r" tiene muchos más resultados que "re"). Nada las pone en fila. Tampoco `await`: como viste en "async/await", suspende **solo esa llamada** a la función async. Otra llamada es otro plato apartado, con su propia nota y su propio repartidor.
+Lo que el cocinero **no** controla es cuánto tarda cada repartidor. En la red, cada petición es independiente: puede pasar por un servidor distinto o por una caché, y su consulta puede ser más cara ("r" tiene muchos más resultados que "re"). Nada las pone en fila. Tampoco `await`: como viste en "async/await y errores asíncronos", suspende **solo esa llamada** a la función async. Otra llamada es otra ficha apartada, con su propio marcapáginas y su propio repartidor.
 
 El primer síntoma del ticket: el usuario escribe "r" y, 100 ms después, "re". Salen dos repartidores y, cada vez que vuelve uno, el cocinero emplata lo que trae:
 
@@ -136,7 +136,7 @@ Esta pregunta te pide seguir el contador en el mismo escenario de antes:
 
 <Pregunta id="race-id-de-peticion" />
 
-Esto es **"el último gana"** (*latest wins*). Pero ojo con lo que dice el nombre: el último en **salir**, no en llegar.
+Esto es **"el último gana"** (*latest wins*), donde "último" significa el último en **salir**.
 
 <AntesDeSeguir>
 
@@ -169,7 +169,7 @@ Es correcto, pero el repartidor viejo hace el viaje completo: la petición se si
 
 ## Capa 2: llamar al repartidor para que vuelva
 
-Con lo que viste en "fetch y cancelación", puedes **llamar al repartidor para que dé la vuelta**: `AbortController`. Abortar cierra la conexión si sigue abierta, así que no descargas datos inútiles, el servidor puede dejar de trabajar (si la conexión se corta a tiempo) y el `fetch` viejo se rechaza con un `AbortError`.
+Con lo que viste en "fetch y cancelación", puedes darle a cada repartidor el receptor del **walkie-talkie** y **llamarlo para que dé la vuelta**: `AbortController`. Abortar corta la transferencia si sigue en curso, así que no descargas datos inútiles; el servidor puede notarlo y dejar de trabajar (si el corte llega a tiempo y está preparado para ello), y el `fetch` viejo se rechaza con un `AbortError`.
 
 ```js
 let controller = null;
@@ -189,7 +189,7 @@ async function onInput(q) {
 }
 ```
 
-¿Sobra entonces el número en la bolsa? No: el teléfono solo sirve si el repartidor lo lleva encima. La señal solo cancela lo que **la escucha**.
+¿Sobra entonces el número en la bolsa? No: el walkie-talkie solo sirve mientras el repartidor lo lleva encima. La señal solo cancela lo que **la escucha**.
 
 <AntesDeSeguir>
 
@@ -309,7 +309,7 @@ La limpieza pone `ignore` en `true`, pero el efecto siguiente la devuelve a `fal
 En la limpieza también puedes abortar (`controller.abort()`), y es buena idea: ahorras la petición. De paso, esta limpieza hace que el doble montaje de StrictMode en desarrollo no deje dos respuestas compitiendo.
 
 <Callout type="nota">
-Por todo esto react.dev desaconseja escribir a mano la obtención de datos en efectos para casos reales: hay carreras, caché, reintentos, deduplicación… TanStack Query (o SWR) asocia cada resultado a una clave (`["search", query]`), así que la respuesta de una clave vieja no se muestra en la actual; además deduplica peticiones iguales y, si tu `queryFn` usa el `signal` que recibe, cancela las que ya nadie observa. En Next.js, los datos que lee un Server Component no tienen este problema en el cliente: no hay un efecto que dispare peticiones que compitan. Pero entender la carrera es lo que te permite saber qué te están resolviendo.
+Por todo esto react.dev desaconseja escribir a mano la obtención de datos en efectos para casos reales: hay carreras, caché, reintentos, deduplicación… TanStack Query (o SWR) asocia cada resultado a una clave (`["search", query]`), así que la respuesta de una clave vieja no se muestra en la actual, y deduplica peticiones iguales; TanStack Query, además, cancela las que ya nadie observa si tu `queryFn` usa el `signal` que recibe. En Next.js, los datos que lee un Server Component no tienen este problema en el cliente: no hay un efecto que dispare peticiones que compitan. Pero entender la carrera es lo que te permite saber qué te están resolviendo.
 </Callout>
 
 ---
@@ -330,7 +330,7 @@ Lo que pasa es una **actualización perdida** (*lost update*):
 | 100 | escribe 10 − 2 | (esperando) | 8 |
 | 300 | | escribe 10 − 3 | 7 |
 
-Es la costura del cajero: dentro de un tramo síncrono nadie te interrumpe, pero **cada `await` es un punto donde otro código puede ejecutarse** y cambiar lo que leíste. El arreglo, en memoria, es que la lectura y la escritura caigan en el **mismo tramo síncrono**: leer `stock` después del `await`, justo al restar.
+Es la costura del cajero otra vez. El arreglo, en memoria, es que la lectura y la escritura caigan en el **mismo tramo síncrono**: leer `stock` después del `await`, justo al restar.
 
 En React es el mismo bug con otra cara:
 
@@ -397,7 +397,7 @@ Con eso tienes las defensas, de la más superficial a la más sólida:
 2. **Un guard síncrono** si no pasas por estado de React: un flag en una variable (o `useRef`) que compruebas y activas en la misma línea síncrona, antes de cualquier `await`. Si lo activas después del `await`, el segundo clic ya entró.
 3. **Idempotencia en el servidor.** El botón deshabilitado no protege de dos pestañas, de un reintento automático tras un timeout ni de un usuario con la red caída que recarga. Genera una clave por intención de envío (por ejemplo `crypto.randomUUID()` al abrir el formulario), mándala con la petición, y que el servidor ignore la segunda petición con la misma clave. Así repetir la operación da el mismo resultado que hacerla una vez.
 
-*Idempotente* viene de las matemáticas (aplicar algo dos veces da lo mismo que una), y HTTP la usa así: la especificación define como idempotentes `PUT`, `DELETE` y los métodos de solo lectura como `GET`, pero no `POST`. Por eso un `POST` que se repite crea dos pedidos, y por eso hay APIs, como la de pagos de Stripe, que aceptan una cabecera `Idempotency-Key` para que el cliente pueda reintentar sin miedo.
+*Idempotente* viene de las matemáticas (aplicar algo dos veces da lo mismo que una), y HTTP la usa así: la especificación (RFC 9110) define como idempotentes `PUT`, `DELETE` y los métodos seguros, de solo lectura, como `GET`, pero no `POST`. Por eso un `POST` que se repite puede crear dos pedidos, y por eso hay APIs, como la de pagos de Stripe, que aceptan una cabecera `Idempotency-Key` para que el cliente pueda reintentar sin miedo.
 
 <Callout type="clave">
 Una race condition aparece siempre que dos tareas asíncronas se solapan y el resultado depende de cuál termina antes. Las preguntas que debes hacerte: ¿puede esta operación lanzarse dos veces antes de que termine la primera? ¿Leo algo antes de un `await` que uso después?
@@ -521,7 +521,7 @@ Ninguna: cada evento llega antes de los 500 ms de silencio y reinicia la cuenta.
 
 </AntesDeSeguir>
 
-Para scroll, resize o el movimiento del ratón quieres lo contrario: ejecutar **a un ritmo máximo** mientras dura la ráfaga. Eso es **throttle**, que en inglés es la válvula que regula un flujo (la del acelerador de un motor); MDN recoge ese origen: frenar el ritmo de un fluido con un obstáculo. En la cocina es una **ventanilla** de pase: cuando sale un plato, se cierra X ms y lo que llegue mientras tanto no pasa. Al abrirse, el siguiente sale en el acto.
+Para scroll, resize o el movimiento del ratón quieres lo contrario: ejecutar **a un ritmo máximo** mientras dura la ráfaga. Eso es **throttle**. En inglés, *throttle* es la válvula que regula el paso de combustible a un motor (el acelerador), y el glosario de MDN recoge ese sentido original: frenar el flujo de un fluido con un obstáculo. En la cocina es una **ventanilla** de despacho: cuando sale un plato, se cierra X ms y lo que llegue mientras tanto no pasa. Al abrirse, el siguiente sale en el acto.
 
 ```js
 function throttle(fn, ms) {
@@ -531,7 +531,7 @@ function throttle(fn, ms) {
     fn(...args);          // fuera: ejecuta en el acto
     waiting = true;
     setTimeout(() => {
-      waiting = false;    // se abre la puerta otra vez
+      waiting = false;    // se abre la ventanilla otra vez
     }, ms);
   };
 }
@@ -556,7 +556,7 @@ Esta pregunta pasa la misma ráfaga de eventos por los dos, para que compares su
 | Recalcular layout en `resize` | throttle (o debounce si solo importa el tamaño final) | Ritmo acotado mientras se arrastra |
 | Botón que no debe dispararse dos veces | debounce leading, o deshabilitar | Responder al primer clic e ignorar los demás |
 
-Para animaciones ligadas al scroll, el throttle natural no es un número de milisegundos sino el ritmo de pintado del navegador: `requestAnimationFrame` ejecuta como mucho una vez por frame. En la cocina del event loop, es la nota que el cocinero lee justo antes de emplatar.
+Para animaciones ligadas al scroll, el throttle natural no es un número de milisegundos sino el ritmo de pintado del navegador: `requestAnimationFrame` ejecuta como mucho una vez por frame. En la cocina de "El event loop", es la lista del pase: lo que el cocinero hace justo antes de emplatar, una vez por frame.
 
 <Callout type="cuidado">
 Debounce **no** arregla la race condition. Reduce el número de peticiones, pero si el usuario pausa 300 ms, escribe otra letra y la primera petición tarda 2 segundos, vuelves a tener dos peticiones en vuelo. Debounce y "el último gana" son complementarios: uno decide **cuándo** pedir, el otro **qué respuesta** vale.
@@ -656,8 +656,8 @@ Después, junta las capas 1 y 2 en una sola herramienta reutilizable: `latestOnl
 
 ## Lo que ahora puedes explicar
 
-Empezaste este módulo con un cocinero solo y una pregunta: qué hace el navegador entre línea y línea de tu código. Luego llegaron las promesas (un plato que todavía no está listo), `async`/`await` (escribir esa espera sin perder el hilo), `fetch` (el repartidor) y `AbortController` (el teléfono para hacerlo volver). Esta lección es lo que pasa cuando todo eso funciona **a la vez**.
+Empezaste este módulo con un cocinero solo y una pregunta: qué hace el navegador entre línea y línea de tu código. Luego llegaron las promesas (el localizador que se enciende una sola vez), `async`/`await` (la ficha que se pausa con un marcapáginas), `fetch` (el repartidor que trae cualquier respuesta) y `AbortController` (el walkie-talkie para hacerlo volver). Esta lección es lo que pasa cuando todo eso funciona **a la vez**.
 
 Ahora puedes explicar por qué un lenguaje de un solo hilo tiene carreras (cada `await` es una costura), por qué la respuesta que gana es la última en llegar y no la última en salir, por qué abortar ahorra trabajo pero solo comprobar garantiza el resultado, y por qué leer algo antes de un `await` y escribir con ello después pierde actualizaciones. Y sabes que debounce y throttle no resuelven carreras: deciden cuántas veces dejas que algo empiece, uno esperando al silencio y el otro marcando un ritmo.
 
-Lo pondrás en práctica en el proyecto del módulo, un buscador contra una API real con debounce, cancelación y manejo de errores. Y lo reencontrarás en React: al estudiar `useEffect` a fondo verás que su limpieza sirve justo para tachar comandas y apagar temporizadores, y que las "closures obsoletas" son el `items` viejo de la capa 4. Cuando llegues a pedir datos en efectos, a TanStack Query y a los Server Components, reconocerás cada problema que te resuelven, porque ya lo resolviste a mano.
+Con esto cierras el módulo. Lo pondrás todo junto en su proyecto, "Buscador con API real": búsqueda con debounce, cancelación de peticiones y manejo de errores. El curso sigue con "Programación funcional y patrones", y fíjate en que ya llevas ventaja: `debounce`, `throttle` y `latestOnly` son funciones que reciben una función y devuelven otra. Y cuando más adelante pidas datos desde React con herramientas que lo hacen por ti, reconocerás cada problema que te resuelven, porque ya lo resolviste a mano.
