@@ -1,6 +1,10 @@
-## Dos bugs con cara de código correcto
+## Un checkout que dice "gracias" demasiado pronto
 
-Un formulario de checkout guarda varias líneas de pedido y luego redirige:
+Soporte te reenvía dos quejas sobre el checkout. Hay clientes que llegan a "¡Gracias por tu
+compra!" y luego el pedido aparece con líneas que faltan. Y cuando el servidor rechaza una línea
+(se agotó el stock), el usuario no ve ningún error: ve "gracias" igualmente.
+
+El código parece impecable:
 
 ```jsx
 async function handleCheckout() {
@@ -18,16 +22,56 @@ async function handleCheckout() {
 }
 ```
 
-Dos cosas salen mal, y las dos parecen imposibles leyendo el código:
+Lo reproduces con la pestaña de red abierta: las peticiones salen, pero la navegación ocurre
+**antes** de que termine ninguna. Y si fuerzas un fallo, el `catch` no se ejecuta: en la consola
+aparece `Uncaught (in promise) Error`, y nada más. Cuatro preguntas:
 
-1. El usuario llega a `/gracias` **antes** de que se haya guardado ninguna línea. A veces el pedido queda a medias.
-2. Cuando `saveLine` falla, el `catch` no se ejecuta nunca. En consola aparece `Uncaught (in promise) Error` y el usuario ve "gracias" igualmente.
+1. ¿Por qué se llega a `/gracias` antes de guardar nada, si el código tiene un `await`?
+2. ¿Por qué el `catch` no se entera del error, si todo está dentro del `try`?
+3. ¿Por qué el `finally` apaga el spinner cuando todavía no ha terminado nada?
+4. Al arreglarlo, ¿hay que guardar las líneas una detrás de otra o todas a la vez?
 
-El `try/catch` está ahí, el `await` está ahí. El problema es que `await` no hace lo que parece: **pausa una función, no el programa**, y solo la función donde está escrito. En "Promesas" viste qué es una promesa y en "El event loop" cómo se encolan las microtareas; aquí vamos a ver qué hace exactamente `async/await` con ellas y por qué los errores se escapan.
+Las cuatro salen de la misma idea: `await` **pausa una función, no el programa**, y solo la
+función donde está escrito. En "Promesas" viste qué es una promesa y en "El event loop" cómo se
+encolan las microtareas; aquí vas a ver qué hace `async/await` con ellas.
 
-## Una función async siempre devuelve una promesa
+---
 
-`async` cambia el contrato de la función: **lo que devuelve siempre es una promesa**, pase lo que pase dentro.
+## De dónde viene await
+
+Durante mucho tiempo, la única forma de decir "cuando termine esto, haz aquello" era pasar un
+**callback**. Con tres pasos encadenados el código se anidaba hacia la derecha (el famoso
+*callback hell*) y cada nivel comprobaba sus errores a mano. Un `try/catch` alrededor no servía:
+el callback corría en otra vuelta del event loop, cuando el `try` ya había terminado.
+
+ES2015 estandarizó las **promesas**: cadenas planas y errores que viajan solos hasta el primer
+`catch`. Pero un bucle donde cada paso espera al anterior no se escribe con un `for` normal,
+compartir una variable entre dos `then` obliga a sacarla de la cadena, y los errores usan un
+vocabulario distinto del `try/catch`.
+
+ES2015 también trajo los **generadores**, funciones que se pausan con `yield` y se reanudan
+conservando sus variables. Librerías como `co` vieron que un generador que hace `yield` de una
+promesa, más un motor que lo reanuda cuando se resuelve, permite escribir código asíncrono que **se
+lee como síncrono**. Esa idea, que C# ya había convertido en sintaxis propia, llegó a JavaScript en
+ES2017 como `async` y `await`.
+
+> `async/await` no añadió ningún mecanismo nuevo. Debajo siguen las mismas promesas y las mismas
+> microtareas. Es una forma de **escribir** promesas como si fueran código secuencial.
+
+---
+
+## La receta que se puede pausar
+
+Recupera la cocina de "El event loop": **un solo cocinero** (el hilo), el **riel de comandas**
+(las tareas), las **notas adhesivas** (las microtareas) y los ayudantes de fuera (las Web APIs),
+que trabajan en paralelo pero nunca cocinan.
+
+Piensa en las funciones como **fichas de receta** que el cocinero sigue de principio a fin. Una
+ficha `async` tiene dos diferencias.
+
+La primera: quien la pide no recibe el plato, sino un **comprobante**: la promesa. Más tarde dirá
+"aquí tienes tu plato" (se cumple) o "hubo un problema, este es el motivo" (se rechaza). Y esto
+pasa **siempre**:
 
 ```js
 async function getTheme() {
@@ -42,46 +86,177 @@ getTheme();   // Promise { "dark" }, no "dark"
 getConfig();  // Promise rechazada; la línea de la llamada no lanza nada
 ```
 
-- `return valor` → la promesa se cumple con ese valor. Si devuelves otra promesa, la de la función adopta su resultado.
-- `throw` (o cualquier error dentro, como leer una propiedad de `undefined`) → la promesa se **rechaza**. Nunca sale como excepción síncrona hacia quien la llamó.
+- `return valor` → la promesa se cumple con ese valor. Si devuelves otra promesa, la de la función
+  adopta su resultado.
+- `throw` (o cualquier error dentro, como leer una propiedad de `undefined`) → la promesa se
+  **rechaza**. Nunca sale como excepción síncrona hacia quien la llamó.
 
-Esto último es la raíz de casi todos los bugs de esta lección: el error de una función async **no viaja por la pila de llamadas**, viaja dentro de una promesa. Y alguien tiene que recoger esa promesa.
+Esta es la raíz de casi todos los bugs de la lección: el error **no viaja por la pila de
+llamadas**, viaja escrito en el comprobante. Y alguien tiene que recogerlo.
+
+<AntesDeSeguir>
+
+¿Qué imprime esto?
+
+```js
+async function getConfig() {
+  throw new Error("config rota");
+}
+
+try {
+  getConfig();
+  console.log("sin errores");
+} catch (e) {
+  console.log("capturado: " + e.message);
+}
+console.log("fin del script");
+```
+
+<Respuesta>
+
+```
+sin errores
+fin del script
+```
+
+Y después, el aviso de rechazo sin manejar: `Uncaught (in promise) Error: config rota` en el
+navegador; en Node, el error con su traza y el proceso terminado.
+
+`getConfig()` devuelve un comprobante con la queja dentro. El `try` vigilaba la pila de llamadas,
+y el error nunca pasó por ella.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Pon a prueba la regla del comprobante con un `return`, un `throw` y un acceso a una propiedad:
 
 <Pregunta id="async-siempre-promesa" />
 
-## await pausa la función, no el hilo
+---
 
-Cuando llamas a una función async pasa esto:
+## await: el marcapáginas
+
+La segunda diferencia: la ficha se puede **pausar**. Al llegar a un `await`, el cocinero pone un
+**marcapáginas**, aparta la ficha y vuelve a lo que hacía antes. Cuando lo esperado está listo, se
+pega una nota adhesiva: "retomar la ficha en el marcapáginas". Sin cocina:
 
 1. El cuerpo empieza a ejecutarse **de inmediato y de forma síncrona**, como cualquier función.
-2. Al llegar al primer `await expr`, la función se **suspende**: guarda su estado (variables locales, en qué línea va) y devuelve su promesa, todavía pendiente, a quien la llamó.
+2. Al llegar al primer `await expr`, la función se **suspende**: guarda su estado (variables
+   locales, en qué línea va) y devuelve su promesa, todavía pendiente, a quien la llamó.
 3. Quien la llamó sigue ejecutando su código como si nada. El hilo no se bloquea.
-4. Cuando la promesa de `expr` se resuelve, la continuación de la función se encola como **microtarea**. Si `expr` no es una promesa (`await null`), igualmente se encola: `await` siempre cede el turno.
-5. Al reanudarse, `await` devuelve el valor cumplido o, si la promesa se rechazó, **lanza el error en esa línea**.
+4. Cuando la promesa de `expr` se resuelve, la continuación se encola como **microtarea**. Si
+   `expr` no es una promesa (`await null`), igualmente se encola: `await` siempre cede el turno.
+5. Al reanudarse, `await` devuelve el valor cumplido o, si la promesa se rechazó, **lanza el error
+   en esa línea**.
+
+<AntesDeSeguir>
+
+El paso 4 es el que más sorprende. ¿Qué imprime esto, si lo que se espera es un simple número?
 
 ```js
-async function load() {
-  console.log("1. síncrono, antes del await");
-  const data = await fetchData();     // aquí se suspende
-  console.log("3. microtarea, cuando fetchData se resuelve");
-  return data;
+async function preparar() {
+  console.log("1. cortar cebolla");
+  await 42;
+  console.log("3. sofreír");
 }
 
-load();
-console.log("2. quien llamó sigue sin esperar");
+preparar();
+console.log("2. atender la mesa 5");
 ```
 
-Todo lo que hay antes del primer `await` es código síncrono: si es lento (un bucle enorme, un `JSON.parse` de 10 MB), bloquea igual que cualquier función. Y una consecuencia práctica: si validas y lanzas antes del primer `await`, la promesa ya sale rechazada, pero sigue siendo una promesa.
+<Respuesta>
+
+```
+1. cortar cebolla
+2. atender la mesa 5
+3. sofreír
+```
+
+`await 42` envuelve el `42` en una promesa ya cumplida, pero la continuación **igualmente** va a una
+nota adhesiva, que se lee al terminar el script. Misma regla que con `then`: nunca en medio de tu
+código.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+La otra cara: **todo lo que hay antes del primer `await` es síncrono**. Si esa parte es lenta (un
+bucle enorme, un `JSON.parse` de 10 MB), bloquea igual que cualquier función: poner `async`
+delante no manda nada a segundo plano. Y si validas y lanzas antes del primer `await`, la promesa
+ya sale rechazada, pero sigue siendo una promesa: quien llama no recibe una excepción.
+
+Comprueba que puedes seguir el hilo con dos llamadas que se pausan a la vez:
 
 <Pregunta id="async-sincrono-hasta-await" />
 
+---
+
+## Quitarle el azúcar: la misma función con then
+
+Si `async/await` es una forma de escribir promesas, tiene que poder escribirse sin él. Esta
+función:
+
+```js
+async function cargarNombre(id) {
+  console.log("pidiendo " + id);
+  const user = await getUser(id);
+  return user.name;
+}
+```
+
+equivale, aproximadamente, a esta:
+
+```js
+function cargarNombre(id) {
+  try {
+    console.log("pidiendo " + id);
+    return Promise.resolve(getUser(id)).then((user) => user.name);
+  } catch (e) {
+    return Promise.reject(e);
+  }
+}
+```
+
+Cada línea es una regla que ya viste:
+
+- Lo de **antes** del `await` corre directamente, en la llamada: es síncrono.
+- Lo de **después** se convierte en el callback de un `then`: por eso va a una microtarea. Si
+  escribes `preparar` de esta forma, imprime exactamente lo mismo que con `await 42`.
+- `Promise.resolve(...)`: todo se envuelve en una promesa, por eso `await 42` cede el turno.
+- El `try/catch` exterior: un `throw` síncrono se convierte en promesa rechazada. Si el callback
+  del `then` lanza (`user` es `undefined`), el `then` también se rechaza.
+
+Es "aproximada" porque la real **conserva variables y posición** dentro de bucles y bloques
+`try`: con `then`, un `for` que espera en cada vuelta se vuelve recursión. Eso te ahorra `await`.
+
 <Callout type="clave">
-`await` es un `.then()` con mejor sintaxis: el resto de la función se convierte en el callback. Por eso solo "espera" la función donde está escrito. El que llama a una función async sin `await` sigue adelante de inmediato.
+
+`await` es un `.then()` con mejor sintaxis: el resto de la función se convierte en el callback. Por
+eso solo "espera" la función donde está escrito. El que llama a una función async sin `await`
+sigue adelante de inmediato.
+
 </Callout>
 
-## try/catch con await: dónde se convierte el rechazo en excepción
+<Profundiza titulo="cuántas vueltas cuesta un await">
 
-Ya viste en "Módulos y errores" que un `try/catch` solo captura lo que se lanza **mientras su bloque se está ejecutando**, y que `return fn()` sin `await` dentro de un `try` deja escapar el rechazo. Con el modelo anterior se ve por qué: el rechazo de una promesa solo se convierte en excepción **en el punto donde se hace `await`**. Si ese `await` no está dentro del `try`, el `catch` no tiene nada que capturar.
+En las primeras versiones de la especificación, un `await` sobre una promesa nativa costaba tres
+ticks de microtarea; un cambio propuesto por el equipo de V8 lo redujo a uno. Por eso ESLint marcó
+como obsoleta en su versión 8.46 la regla `no-return-await`, que desaconsejaba `return await` por
+su coste extra. Aun así, no dependas del número de ticks: si el orden importa, hazlo explícito.
+
+</Profundiza>
+
+---
+
+## Dónde estalla el error: try/catch con await
+
+Ya viste en "Módulos y errores" que un `try/catch` solo captura lo que se lanza **mientras su
+bloque se está ejecutando**, y que `return fn()` sin `await` dentro de un `try` deja escapar el
+rechazo. La cocina explica por qué: un `try/catch` es un **plan B escrito en la ficha** para unas
+líneas concretas. Si lo esperado llega estropeado, el cocinero lo descubre **al retomar la ficha en
+el marcapáginas**: el error estalla en la línea del `await`. Si esa línea está dentro del `try`, el
+plan B se activa; si no hubo ningún `await` dentro, el plan B no se entera.
 
 ```js
 async function save(data) {
@@ -95,26 +270,128 @@ async function save(data) {
 }
 ```
 
-Regla práctica: dentro de un `try`, toda promesa cuyo fallo quieras manejar va con `await`, incluida la del `return` (`return await`). Fuera de un `try`, `return promesa` y `return await promesa` dan el mismo resultado.
+El `return` es el más traicionero: lo que sale del `try` es un comprobante sin abrir.
 
-## finally también espera (y también se ejecuta con return)
+<AntesDeSeguir>
 
-`finally` sigue sus reglas de siempre, pero ahora "siempre" ocurre **cuando la función se reanuda**, no cuando la llamas:
+Las dos funciones solo se diferencian en un `await`. ¿Qué imprime?
 
-- Si el `try` hace `return`, el valor queda pendiente, se ejecuta `finally` y **después** la función devuelve. Con `return` en el `catch` pasa lo mismo.
-- Si la función está suspendida en un `await` dentro del `try`, su `finally` no ha corrido todavía: correrá cuando se reanude.
+```js
+async function fallar() {
+  throw new Error("timeout");
+}
 
-Es el patrón de `setLoading(false)` en `finally`: se apaga el spinner tanto si va bien como si falla, pero solo cuando la operación de verdad termina.
+async function sinAwait() {
+  try {
+    return fallar();
+  } catch {
+    return "recuperado";
+  }
+}
+
+async function conAwait() {
+  try {
+    return await fallar();
+  } catch {
+    return "recuperado";
+  }
+}
+
+const mostrar = (p) => p.then((v) => "cumplida: " + v, (e) => "rechazada: " + e.message);
+console.log("sinAwait → " + (await mostrar(sinAwait())));
+console.log("conAwait → " + (await mostrar(conAwait())));
+```
+
+<Respuesta>
+
+```
+sinAwait → rechazada: timeout
+conAwait → cumplida: recuperado
+```
+
+En `sinAwait`, el `try` termina sin que nada haya fallado todavía dentro de él, y la promesa de la
+función adopta el rechazo. En `conAwait`, la función se suspende **dentro** del `try`; al
+reanudarse, el rechazo se lanza en esa línea y el `catch` lo atrapa.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Regla práctica: dentro de un `try`, toda promesa cuyo fallo quieras manejar va con `await`,
+incluida la del `return` (`return await`). Fuera de un `try`, `return promesa` y `return await
+promesa` dan el mismo resultado. Es justo lo que exige `@typescript-eslint/return-await` con su
+opción por defecto, `in-try-catch`.
+
+---
+
+## finally: limpiar cuando la receta termina de verdad
+
+En una función async, `finally` ocurre **cuando la función se reanuda y termina**, no cuando la
+llamas: el cocinero llega a "limpiar la mesa" al acabar la receta, no al poner un marcapáginas.
+
+- Si el `try` hace `return`, el valor queda pendiente, se ejecuta `finally` y **después** la
+  función devuelve. Con `return` en el `catch` pasa lo mismo.
+- Si la función está suspendida en un `await` dentro del `try`, su `finally` no ha corrido
+  todavía: correrá cuando se reanude.
+- Si el `try` lanza antes de cualquier `await`, `catch` y `finally` corren en el acto, durante la
+  propia llamada.
+
+Es el patrón de `setLoading(false)` en `finally`: el spinner se apaga vaya bien o mal, pero solo
+cuando la operación termina, siempre que esté esperada con `await` **en la ficha**.
+
+Esta pregunta mezcla las tres reglas: una llamada que se suspende y otra que falla antes de
+cualquier `await`.
 
 <Pregunta id="async-finally-con-await" />
 
+<AntesDeSeguir>
+
+Un último detalle. ¿Cómo termina la promesa de `guardar`?
+
+```js
+async function guardar() {
+  try {
+    throw new Error("disco lleno");
+  } finally {
+    return "ok";
+  }
+}
+
+guardar().then(
+  (v) => console.log("cumplida: " + v),
+  (e) => console.log("rechazada: " + e.message),
+);
+```
+
+<Respuesta>
+
+```
+cumplida: ok
+```
+
+El `return` del `finally` reemplaza lo que estuviera saliendo, **incluido un error**. El "disco
+lleno" desaparece y quien llama cree que todo fue bien.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
 <Callout type="cuidado">
-No pongas `return` dentro de un `finally`: reemplaza el valor de retorno **y descarta el error** que estuviera saliendo. Un `finally` es para limpiar, no para decidir el resultado.
+
+No pongas `return` dentro de un `finally`: reemplaza el valor de retorno **y descarta el error**
+que estuviera saliendo. Un `finally` es para limpiar, no para decidir el resultado.
+
 </Callout>
 
-## Promesas flotantes
+---
 
-Una **promesa flotante** es una promesa que nadie espera con `await`, ni devuelve, ni le pone `.catch()`. Si se rechaza, el error no llega a ningún `catch`: el runtime lo reporta como *unhandled rejection* (`Uncaught (in promise)` en el navegador; en Node, por defecto, termina el proceso).
+## Comprobantes tirados al suelo: promesas flotantes
+
+Una **promesa flotante** es una promesa que nadie espera con `await`, ni devuelve, ni le pone
+`.catch()`: un comprobante tirado al suelo. Si el plato sale mal, la queja no llega a ningún
+`catch` y sube directamente al gerente: el runtime la reporta como *unhandled rejection*
+(`Uncaught (in promise)` en el navegador) y en Node, desde la versión 15, por defecto **termina el
+proceso**.
 
 ```js
 function onSave() {
@@ -130,15 +407,49 @@ function onSave() {
 }
 ```
 
-Que una función async se pueda llamar sin `await` es útil (así arrancas cosas en paralelo), pero cada vez que lo haces tienes que saber **quién se ocupa de su error**. La regla de ESLint `@typescript-eslint/no-floating-promises` detecta exactamente esto.
+Llamar a una función async sin `await` es útil (así arrancas cosas en paralelo), pero tienes que
+saber **quién se ocupa de su error**. La regla de ESLint
+`@typescript-eslint/no-floating-promises` detecta exactamente esto.
 
 ### El caso más común: forEach
 
-`forEach` llama a tu callback y **descarta lo que devuelve**. Si el callback es async, lo que descarta es una promesa: no la espera y no mira si falla. El bucle termina al instante, la función que lo contiene sigue, y cada iteración queda flotando.
+`forEach` es un ayudante que reparte fichas: llama a tu callback por cada elemento y **descarta lo
+que devuelve**. Si el callback es async, lo que descarta es un comprobante: no lo espera y no mira
+si trae una queja. El bucle termina al instante y cada iteración queda flotando. No es un
+descuido: `forEach` es anterior a las promesas y siempre devuelve `undefined`.
+
+Esta pregunta es el bug del checkout en pequeño, con un guardado que falla:
 
 <Pregunta id="async-foreach-no-espera" />
 
-Es exactamente el bug del checkout. Lo mismo pasa con cualquier API que espere un callback síncrono: `map` (te da un array de promesas, que al menos puedes esperar), `filter` (una promesa siempre es truthy, así que no filtra nada), `reduce`, `sort` o un `addEventListener`. Las alternativas:
+Lo mismo pasa con cualquier API que espere un callback síncrono: `map` (te da un array de
+promesas, que al menos puedes esperar), `filter`, `reduce`, `sort` o un `addEventListener`.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const pedidos = [1, 2, 3, 4];
+
+const pares = pedidos.filter(async (n) => n % 2 === 0);
+console.log(pares.length);
+```
+
+<Respuesta>
+
+```
+4
+```
+
+Un callback async devuelve siempre una promesa, y una promesa es un objeto: siempre *truthy*. El
+`n % 2 === 0` se calcula, pero queda dentro de un comprobante que `filter` nunca abre.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Las alternativas:
 
 ```js
 // En serie: uno detrás de otro, se detiene en el primer error
@@ -150,11 +461,57 @@ for (const item of items) {
 await Promise.all(items.map((item) => api.saveLine(item)));
 ```
 
-## Secuencial vs paralelo
+Con `for...of` se pausa **tu** ficha; con `map` recoges los comprobantes y `Promise.all` los grapa
+en uno que sí puedes esperar.
 
-`await` dentro de un bucle es **secuencial**: la siguiente operación no empieza hasta que termina la anterior. A veces es lo que quieres (cada paso depende del anterior, o la API no aguanta 100 peticiones a la vez), pero muchas veces es una **cascada** (*waterfall*) accidental: tres peticiones independientes de 300 ms tardan 900 ms en vez de 300.
+---
 
-La clave es separar **iniciar** de **esperar**. Una promesa empieza a hacer su trabajo cuando llamas a la función, no cuando haces `await`:
+## En serie o en paralelo
+
+Queda la cuarta pregunta. El repartidor trabaja **en paralelo** con el cocinero: puedes mandarlo a
+por tomates, esperar y luego mandarlo a por queso, o encargarle las dos cosas a la vez. Varios
+`await` seguidos son lo primero: **secuencial**. A veces es lo que quieres (cada paso depende del anterior, o la API no aguanta 100 peticiones a la vez), pero
+muchas veces es una **cascada** (*waterfall*) accidental: tres peticiones independientes de 300 ms
+tardan 900 ms en vez de 300.
+
+La clave es separar **iniciar** de **esperar**. Una promesa empieza su trabajo cuando llamas a la
+función, no cuando haces `await`.
+
+<AntesDeSeguir>
+
+¿Qué imprime, y cuándo sale cada pedido?
+
+```js
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function pedir(producto) {
+  console.log("pedido: " + producto);
+  return wait(10).then(() => producto);
+}
+
+const tomates = pedir("tomates");
+const queso = pedir("queso");
+console.log("todavía no espero nada");
+console.log((await tomates) + " y " + (await queso));
+```
+
+<Respuesta>
+
+```
+pedido: tomates
+pedido: queso
+todavía no espero nada
+tomates y queso
+```
+
+Llamar a `pedir` ya pone al repartidor en marcha. Los `await` del final no inician nada: esperan
+trabajos que ya corrían a la vez.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Convertir una cascada en paralelo es mover el momento de la espera:
 
 ```js
 // Cascada: posts no empieza hasta que llega user
@@ -165,17 +522,31 @@ const posts = await getPosts(id);
 const [user, posts] = await Promise.all([getUser(id), getPosts(id)]);
 ```
 
-`Promise.all` no "lanza" nada en paralelo: recibe promesas que ya están en marcha y espera a todas. Devuelve los resultados en el orden del array (no en el orden en que terminan) y rechaza con el **primer** error, sin esperar al resto. Si necesitas todos los resultados aunque alguno falle, existe `Promise.allSettled`, que ya viste en "Promesas"; en el primer ejercicio vas a construir algo parecido a mano.
+`Promise.all` no "lanza" nada en paralelo: recibe promesas que ya están en marcha y espera a
+todas. Devuelve los resultados en el orden del array (no en el orden en que terminan) y rechaza
+con el **primer** error, sin esperar al resto, aunque el resto sigue ejecutándose. Si necesitas
+todos los resultados aunque alguno falle, existe `Promise.allSettled`, que ya viste en "Promesas";
+en el primer ejercicio vas a construir algo parecido a mano.
+
+Esta pregunta pone las dos versiones una detrás de otra, con duraciones distintas:
 
 <Pregunta id="async-secuencial-vs-paralelo" />
 
 <Callout type="cuidado">
-Iniciar promesas y esperarlas "más tarde" una a una (`const a = getA(); const b = getB(); await a; await b;`) también corre en paralelo, pero si `b` se rechaza mientras esperas a `a`, durante ese rato `b` no tiene manejador y el runtime puede reportarla como no manejada. `Promise.all` las vigila a todas desde el principio.
+
+Iniciar promesas y esperarlas "más tarde" una a una (`const a = getA(); const b = getB(); await a;
+await b;`) también corre en paralelo, pero si `b` se rechaza mientras esperas a `a`, durante ese
+rato `b` no tiene manejador y el runtime puede reportarla como no manejada. `Promise.all` las
+vigila a todas desde el principio.
+
 </Callout>
 
-## Top-level await en módulos
+---
 
-En un módulo ES (y solo ahí: no en scripts clásicos ni en CommonJS) puedes usar `await` en el nivel superior, fuera de cualquier función:
+## await fuera de una función: top-level await
+
+Desde ES2022, en un módulo ES (y solo ahí: no en scripts clásicos ni en CommonJS) puedes usar
+`await` en el nivel superior, fuera de cualquier función:
 
 ```js
 // config.js
@@ -183,15 +554,27 @@ const res = await fetch("/config.json");
 export const config = await res.json();
 ```
 
-Es lo que usan las preguntas de esta lección. Ojo con lo que implica: **los módulos que importan `config.js` no se evalúan hasta que ese `await` termina**. Es cómodo para inicializar algo una vez, pero un `await` lento en el nivel superior retrasa todo lo que depende de ese módulo.
+Es lo que usan las preguntas de esta lección. Aquí la ficha que se pausa es el **módulo entero**, y
+eso tiene un precio: **los módulos que importan `config.js` no se evalúan hasta que ese `await`
+termina**. Es cómodo para inicializar algo una vez, pero un `await` lento en el nivel superior
+retrasa todo lo que depende de ese módulo.
 
-## async en useEffect
+---
 
-El callback de `useEffect` no puede ser async. No es una regla arbitraria de React: lo que devuelve el efecto se interpreta como su **función de limpieza**, y una función async siempre devuelve una promesa. React lo advierte en desarrollo y, cuando toca limpiar el efecto, intenta llamar a esa promesa como si fuera una función, lo que lanza un `TypeError`.
+## async en React: useEffect
+
+El callback de `useEffect` no puede ser async. No es una regla arbitraria: lo que devuelve el
+efecto se interpreta como su **función de limpieza**, y una función async, en lugar de
+instrucciones para recoger, entrega un comprobante. React lo advierte en desarrollo y, cuando toca
+limpiar el efecto, intenta llamar a esa promesa como si fuera una función, lo que lanza un
+`TypeError`.
+
+Esta pregunta te pide distinguir el problema real de otras explicaciones que suenan razonables:
 
 <Pregunta id="async-useeffect-async" />
 
-El patrón que recomienda react.dev es declarar la función async **dentro** del efecto, llamarla, y usar la limpieza para ignorar respuestas que llegan tarde:
+El patrón que recomienda react.dev es declarar la función async **dentro** del efecto, llamarla, y
+usar la limpieza para ignorar respuestas que llegan tarde:
 
 ```jsx
 useEffect(() => {
@@ -214,11 +597,20 @@ useEffect(() => {
 }, [query]);
 ```
 
-Fíjate en que `load()` es una promesa flotante, pero controlada: el `try/catch` está **dentro**, así que nunca se rechaza. Si el usuario escribe rápido, varias peticiones están en vuelo a la vez y pueden llegar fuera de orden; el flag `ignore` evita que una respuesta vieja pise a la nueva. En "fetch y cancelación" verás cómo `AbortController` va un paso más allá y cancela la petición de verdad.
+`load()` es una promesa flotante, pero controlada: el `try/catch` está **dentro** y los dos
+`await` están en el `try`, así que nunca se rechaza.
+
+Si el usuario escribe rápido, varias peticiones están en vuelo a la vez y pueden llegar fuera de
+orden; el flag `ignore` evita que una respuesta vieja pise a la nueva. Pero la petición vieja
+sigue viajando y se descarga entera: solo se ignora su resultado. En "fetch y cancelación" verás
+cómo `AbortController` la cancela de verdad.
+
+---
 
 ## Server Components: await en el servidor
 
-En el App Router de Next.js, un Server Component **sí puede ser una función async**: React la espera en el servidor y usa el resultado para renderizar.
+En el App Router de Next.js, un Server Component **sí puede ser una función async**: React la
+espera en el servidor y usa el resultado para renderizar.
 
 ```jsx
 export default async function ArtistPage({ params }) {
@@ -233,20 +625,79 @@ export default async function ArtistPage({ params }) {
 }
 ```
 
-Todo lo de esta lección se aplica tal cual: dos `await` seguidos son una cascada que el usuario paga en tiempo de carga (la documentación de Next usa este mismo ejemplo), y un `getAlbums` que se rechaza sin capturar hace que falle el render y lo recoja el `error.js` más cercano, que es un error boundary. La diferencia con `useEffect` es quién espera la promesa: aquí la recoge React en el servidor; en un efecto, nadie.
+Todo lo de esta lección se aplica tal cual: dos `await` seguidos son una cascada que el usuario
+paga en tiempo de carga (la documentación de Next usa este mismo ejemplo), y un `getAlbums` que se
+rechaza sin capturar hace que falle el render y lo recoja el `error.js` más cercano, que es un
+error boundary. La diferencia con `useEffect` es **quién espera la promesa**: aquí la recoge React
+en el servidor; en un efecto, nadie.
+
+---
+
+## El checkout, resuelto
+
+Vuelve al código del principio con la cocina en la cabeza.
+
+**¿Por qué se llega a `/gracias` antes de guardar nada?** El único `await` está en el callback de
+`forEach`, que es **otra ficha**. Cada `saveLine` empieza en el acto (por eso las peticiones
+salen), pero cada callback entrega un comprobante que `forEach` tira. `handleCheckout` nunca se
+pausa: sigue con `router.push` en la misma vuelta del event loop.
+
+**¿Por qué el `catch` no se entera?** El error estalla al retomar la ficha del callback, que no
+tiene plan B; el `try` de `handleCheckout` terminó hace rato. La queja acaba en el gerente:
+`Uncaught (in promise) Error`.
+
+**¿Por qué el `finally` apaga el spinner demasiado pronto?** `handleCheckout` no tiene ningún
+`await` propio: su `try` termina de forma síncrona y el `finally` corre en el acto.
+
+**¿En serie o en paralelo?** Las líneas son independientes: se inician todas y se esperan juntas.
+
+```jsx
+async function handleCheckout() {
+  setSaving(true);
+  try {
+    await Promise.all(cart.items.map((item) => api.saveLine(item)));
+    router.push("/gracias");
+  } catch (e) {
+    setError("No se pudo guardar el pedido");
+  } finally {
+    setSaving(false);
+  }
+}
+```
+
+Ahora el `await` está en la ficha de `handleCheckout`: se navega solo si todo se guardó, el primer
+rechazo estalla dentro del `try` y el `finally` espera. Un matiz: `Promise.all` **no detiene** las
+demás líneas, así que el pedido aún puede quedar a medias en el servidor, solo que ahora el usuario
+se entera. "Todo o nada" no se arregla en el cliente: hace falta un endpoint que guarde el pedido
+entero en una sola operación.
+
+---
 
 ## Práctica
 
+El primer ejercicio lleva el `saveAll` del checkout más allá: arrancar todo a la vez, conservar el
+orden y, si algo falla, **esperar a que terminen todos** antes de rechazar con un `AggregateError`
+que reúna los errores. Justo lo que `Promise.all` no hace solo.
+
 <Ejercicio id="async-guardar-todos" />
+
+El segundo trata de los fallos intermitentes de las redes reales: una función de reintentos y un
+`fetchJsonSafe` que nunca debe lanzar. Sus bugs son de esta lección: promesas que salen de un
+`try` sin `await` y esperas que no esperan.
 
 <Ejercicio id="async-reintentos" />
 
-## Resumen
+---
 
-- Una función `async` **siempre devuelve una promesa**: `return` la cumple, `throw` la rechaza. Nunca lanza de forma síncrona a quien la llama.
-- Su cuerpo corre **síncrono hasta el primer `await`**; ahí se suspende y quien la llamó sigue. El resto se reanuda como microtarea.
-- El rechazo se convierte en excepción **donde se hace `await`**: para que un `try/catch` lo vea, el `await` tiene que estar dentro (también en el `return`).
-- `finally` se ejecuta siempre, también con `return`, pero en una función async ocurre cuando se reanuda y termina, no al llamarla.
-- Una promesa que nadie espera ni captura es **flotante**: sus errores acaban como unhandled rejection. `forEach` con callback async es el caso clásico; usa `for...of` (en serie) o `Promise.all` con `map` (en paralelo).
-- Separa iniciar de esperar: varias operaciones independientes se inician juntas y se esperan con `Promise.all`.
-- En `useEffect`, función async dentro del efecto y limpieza que ignore o cancele; en Server Components, `await` directamente, cuidando de no crear cascadas.
+## Lo que ahora puedes explicar
+
+Si alguien te pregunta por qué su `try/catch` no captura un error, buscas el `await` que convierte
+el rechazo en excepción y miras si está dentro del `try`. Sabes que una función async siempre
+entrega un comprobante, que corre síncrona hasta el primer `await` y que ahí solo se pausa ella;
+sabes traducir un `await` a un `then`; reconoces un comprobante tirado al suelo, y sabes que
+iniciar y esperar son dos momentos distintos.
+
+Pero hay un hueco que ha aparecido tres veces: el `ignore` de `useEffect`, el `Promise.all` que
+deja de esperar sin detener nada, el pedido que sigue guardándose aunque el usuario se haya ido.
+**Una promesa no se puede cancelar**: ignorar un resultado no detiene el trabajo que lo produce.
+Cómo pedirle a `fetch` que pare de verdad es la siguiente lección: "fetch y cancelación".

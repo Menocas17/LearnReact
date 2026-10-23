@@ -8,9 +8,9 @@ export const asyncAwait: LessonDef = {
   slug: "async-await",
   title: "async/await y errores asíncronos",
   summary:
-    "Por qué un try/catch no ve el error y un forEach con async termina antes de tiempo: qué hace realmente await, promesas flotantes, secuencial vs paralelo, y async en useEffect y Server Components.",
+    "Un checkout que redirige antes de guardar y un catch que no ve el error: de dónde viene await, cómo se traduce a then, dónde estalla un rechazo, promesas flotantes, secuencial vs paralelo, y async en useEffect y Server Components.",
   concepts: ["async.async-await", "js.errores"],
-  minutes: 40,
+  minutes: 55,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
