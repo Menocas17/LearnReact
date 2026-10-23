@@ -8,9 +8,9 @@ export const promesas: LessonDef = {
   slug: "promesas",
   title: "Promesas",
   summary:
-    "Por qué una página que pide tres endpoints tarda el triple y por qué un then devuelve undefined: estados, encadenamiento y Promise.all, allSettled, race y any.",
+    "Un dashboard que tarda el triple y se cae por lo menos importante: de los callbacks a las promesas, por qué se asientan una sola vez, cómo se encadenan y propagan errores, y Promise.all, allSettled, race y any.",
   concepts: ["async.promesas", "async.combinadores"],
-  minutes: 45,
+  minutes: 60,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
