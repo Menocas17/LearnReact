@@ -79,9 +79,10 @@ síncrono, un `throw` se convierte en rechazo) responden una a una a esas pregun
 <Profundiza titulo="jQuery y las promesas que no eran del todo promesas">
 
 Los *Deferred* de jQuery anteriores a la versión 3.0 no seguían Promises/A+: una excepción
-dentro de un callback de `then` no se convertía en un rechazo, y los callbacks podían ejecutarse
-de forma síncrona. jQuery 3.0 los hizo compatibles, como cambio que podía romper código
-existente: dos objetos con un método `then` podían comportarse de forma muy distinta.
+dentro de un callback de `then` no se convertía en un rechazo, sino que subía sin control, y si
+el *Deferred* ya estaba resuelto, el callback se ejecutaba en el acto, de forma síncrona. Así,
+dos objetos con un método `then` podían comportarse de forma muy distinta. jQuery 3.0 los hizo
+compatibles, y su guía de migración lo presenta como un cambio que puede romper código existente.
 
 Por la misma razón, cualquier objeto con un método `then` (un *thenable*) se trata como una
 promesa cuando lo devuelves desde un `then` o se lo pasas a `Promise.resolve`: así las promesas
@@ -385,8 +386,8 @@ correcto es no envolver: usar `falla()` directamente.
 
 Las promesas **no se pueden cancelar**. Una promesa representa un trabajo que ya está en marcha;
 ignorar su resultado no detiene la petición ni el timer. Tirar el localizador no cancela el café.
-Para cancelar de verdad hace falta otra pieza (`AbortController`), que verás en la lección de
-fetch y cancelación.
+Para cancelar de verdad hace falta otra pieza (`AbortController`), que verás en la lección
+"fetch y cancelación".
 
 </Callout>
 

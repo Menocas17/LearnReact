@@ -84,7 +84,7 @@ Pero toda garantía tiene un precio. Y el precio está escondido en otra palabra
 Los Web Workers son hilos de JavaScript de verdad, en paralelo. Pero respetan la regla del hilo
 único para la página: un worker **no puede tocar el DOM**. Se comunica con el hilo principal
 enviando mensajes, que llegan como un evento más al bucle. Son la salida para cálculo pesado de
-verdad, y volverás a ellos al final de esta lección.
+verdad, y volverás a ellos cuando toque arreglar el ticket.
 
 </Profundiza>
 
@@ -214,7 +214,7 @@ cola, y entender para qué sirve explica sus reglas.
 Durante años los navegadores ofrecieron los *mutation events*: te avisaban de cada cambio en el
 DOM **de forma síncrona**, en el mismo instante en que ocurría. Insertar 1000 nodos disparaba
 1000 eventos en medio de tu código. Su diseño degradaba tanto el rendimiento que se declararon
-obsoletos, y hoy los navegadores los están eliminando.
+obsoletos, y los navegadores los están retirando.
 
 Su reemplazo, `MutationObserver`, avisa de otra manera: espera a que termines lo que estás
 haciendo y te entrega **todos los cambios juntos**, pero **antes** de que pase cualquier otra
@@ -493,8 +493,8 @@ Y ahora lo que nadie te cuenta del retardo:
 - **`0` no es inmediato.** Significa "en la siguiente comanda disponible", siempre después del
   código síncrono y de las notas pendientes. Node lo convierte en 1 ms; los navegadores imponen
   un mínimo de 4 ms cuando los timers se anidan (a partir del quinto nivel de un `setTimeout` que
-  programa otro), y en pestañas en segundo plano los limitan a una ejecución por segundo
-  aproximadamente, o incluso menos.
+  programa otro), y en pestañas en segundo plano los frenan mucho más: en general, como mucho una
+  vez por segundo, y a veces bastante menos.
 - **Los timers con el mismo retardo se ejecutan en el orden en que se crearon**, como en el
   ejemplo del CSV con `!`. Con retardos distintos, el orden depende del tiempo y de lo cargado
   que esté el hilo.
@@ -513,9 +513,11 @@ Guarda una marca con `Date.now()` y calcula la diferencia.
 ### setInterval: el cliente que no mira si su plato salió
 
 `setInterval` es un cliente que pide un plato cada minuto, salga o no el anterior. No sabe nada
-de tu callback. Si el callback tarda más que el intervalo, los ticks se ejecutan pegados, sin
-hueco para nada más. Y si el callback lanza algo asíncrono (un `fetch` de sondeo, por ejemplo),
-las ejecuciones **se solapan**.
+de tu callback. Si el callback síncrono tarda más que el intervalo, no hay respiro: cuando termina
+un tick, el siguiente ya está vencido y esperando en el riel. Entre uno y otro pueden colarse
+otras comandas o un pintado, pero tu callback acapara casi todo el hilo. Y si
+el callback lanza algo asíncrono (un `fetch` de sondeo, por ejemplo), las ejecuciones **se
+solapan**.
 
 <AntesDeSeguir>
 
@@ -569,9 +571,9 @@ desde la interacción hasta el siguiente frame. Contado en la cocina, tiene tres
 - **Procesamiento**: lo que tardan tus handlers.
 - **Retraso de presentación**: lo que pasa desde que terminan hasta que el plato sale emplatado.
 
-Cuentan los clics, los toques en pantalla táctil y las teclas (no el scroll ni el hover), y en la
-mayoría de las páginas se reporta la peor interacción. Hasta 200 ms se considera buena
-respuesta; por encima de 500 ms, mala. El handler del ticket, con su bucle síncrono de 1,5 s, es
+Cuentan los clics, los toques en pantalla táctil y las teclas (no el scroll ni el hover), y lo que
+se reporta es la interacción más lenta de la visita (descartando algún valor atípico si hay
+muchas). Hasta 200 ms se considera buena respuesta; por encima de 500 ms, mala. El handler del ticket, con su bucle síncrono de 1,5 s, es
 una interacción que tarda más de 1,5 s en verse, y el INP de la página lo refleja.
 
 ### scheduler.yield(): colarse en el riel sin trampas
@@ -619,7 +621,8 @@ Cuidado con lo que no hace:
 
 Un truco habitual combina las dos piezas. Para ejecutar algo **después** de que el navegador haya
 pintado, se pone un `setTimeout` dentro de un `requestAnimationFrame`: el rAF corre justo antes
-del pintado, y el timer cae en la primera comanda tras ese frame.
+del pintado, y el timer, que se cuelga en el riel en ese momento, cae en una comanda posterior a
+ese frame.
 
 ```js
 status.textContent = "Exportando…";
