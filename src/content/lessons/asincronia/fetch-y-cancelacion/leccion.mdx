@@ -6,7 +6,7 @@ Es jueves y tienes dos avisos que apuntan al mismo componente. Uno viene de la m
 
 El otro, de QA:
 
-> **#517 — "El perfil muestra a la persona equivocada".** Hago clic en Ana y enseguida en Luis: la URL dice Luis, la pantalla muestra a Ana. Además, el perfil de un usuario borrado sale vacío en vez de mostrar el error.
+> **#531 — "El perfil muestra a la persona equivocada".** Hago clic en Ana y enseguida en Luis: la URL dice Luis, la pantalla muestra a Ana. Además, el perfil de un usuario borrado sale vacío en vez de mostrar el error.
 
 Abres el componente. Parece impecable:
 
@@ -506,4 +506,4 @@ Si alguien pregunta por qué `fetch` "no lanza con un 404", ya no contestas "por
 
 También sabes por qué una promesa no se cancela (es un resguardo que cualquiera puede tener) y cómo se cancela de verdad: un emisor para quien decide, un receptor para quien trabaja, uno por operación. Y sabes dónde acaba su poder: en tu lado de la conexión.
 
-Pero el ticket #517 escondía algo más general que `fetch`: operaciones asíncronas que se solapan y terminan en un orden que no controlas. Eso es una **race condition**, y aparece igual en un buscador que muestra resultados viejos o en un botón que guarda dos veces. En la siguiente lección las verás con líneas de tiempo, junto con **debounce** y **throttle**, para controlar cuántas peticiones salen en primer lugar.
+Pero el ticket #531 escondía algo más general que `fetch`: operaciones asíncronas que se solapan y terminan en un orden que no controlas. Eso es una **race condition**, y aparece igual en un buscador que muestra resultados viejos o en un botón que guarda dos veces. En la siguiente lección las verás con líneas de tiempo, junto con **debounce** y **throttle**, para controlar cuántas peticiones salen en primer lugar.

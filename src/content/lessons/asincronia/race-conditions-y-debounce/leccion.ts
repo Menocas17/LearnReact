@@ -8,9 +8,9 @@ export const raceConditionsYDebounce: LessonDef = {
   slug: "race-conditions-y-debounce",
   title: "Race conditions, debounce y throttle",
   summary:
-    "Por qué tu buscador muestra resultados de una búsqueda vieja y \"Guardar\" crea dos registros: respuestas fuera de orden, el último gana, y cómo limitar la frecuencia con debounce y throttle.",
+    "Un buscador que muestra resultados viejos, pedidos duplicados y un debounce que no ahorra nada: por qué un solo hilo también tiene carreras, cómo hacer que gane la última petición en salir y cómo limitar la frecuencia con debounce y throttle.",
   concepts: ["async.race-conditions", "async.debounce-throttle"],
-  minutes: 40,
+  minutes: 55,
   questions: preguntas,
   exercises: ejercicios,
   videos: [

@@ -1,6 +1,10 @@
-## Dos bugs que seguramente ya viste
+## Un ticket con tres síntomas
 
-**El buscador que miente.** Escribes "re" en un buscador y la lista muestra resultados de "r". El código parece impecable:
+Es viernes por la tarde y en el tablero hay un ticket que parece tres:
+
+> **#731 — "El buscador de productos se comporta raro".** (1) A veces la lista no coincide con lo que dice el input: escribes "re" y ves los resultados de "r". (2) Soporte reporta pedidos duplicados de clientes que hicieron doble clic en "Confirmar pedido". (3) El equipo de backend se queja: cada búsqueda genera una petición por tecla.
+
+Abres el componente. El efecto que pide los resultados es el que aparece en cualquier tutorial:
 
 ```jsx
 useEffect(() => {
@@ -8,49 +12,164 @@ useEffect(() => {
 }, [query]);
 ```
 
-**El botón que duplica.** Un usuario hace doble clic en "Guardar" (o la red va lenta y vuelve a pulsar) y en la base de datos aparecen dos pedidos idénticos.
+Con tu red rápida no reproduces el primer síntoma. Activas la limitación de red de las DevTools, escribes rápido y ahí está, una vez de cada tantas.
 
-Ninguno de los dos es un bug de React ni de `fetch`. Son **race conditions**: el resultado depende del orden en que terminan tareas asíncronas que se solapan, y ese orden no lo controlas tú. En esta lección vas a ver cómo se producen con líneas de tiempo explícitas, cómo se arreglan y, de paso, cómo **limitar la frecuencia** con la que algo se ejecuta (debounce y throttle), que es la otra mitad de cualquier buscador decente.
+Para el tercero tienes una solución conocida: `debounce` de lodash, dentro del componente, envolviendo la búsqueda. Escribes "react" y miras la pestaña Network: **cinco peticiones**, igual que antes.
 
-## El orden de llegada no es el orden de salida
+Antes de tocar más código, te detienes, porque hay cosas que no encajan con lo que aprendiste en este módulo:
 
-En "fetch y cancelación" viste que `fetch` devuelve una promesa que se resuelve cuando llega la respuesta. Si lanzas dos peticiones, cada una es independiente: puede pasar por un servidor distinto, una caché, una consulta más cara ("r" tiene muchos más resultados que "re")… Nada las serializa.
+1. ¿Por qué la lista muestra resultados de "r" si el input dice "re", con un código que parece impecable?
+2. ¿Cómo puede haber pedidos duplicados, una "carrera", en un lenguaje de **un solo hilo** donde una función nunca se interrumpe a la mitad?
+3. ¿Por qué el debounce que añadiste no ahorró ni una petición?
+4. Y si consigues que funcione, ¿arregla también el primer síntoma?
 
-Y `await` tampoco: como viste en "async/await", `await` suspende **solo esa llamada** a la función async. Otra llamada a la misma función sigue su propia vida. Cada llamada a `onInput` es una carrera independiente:
+Las cuatro tratan de **el tiempo**: en qué orden terminan las cosas que se solapan, y con qué frecuencia dejas que empiecen.
+
+---
+
+## Carreras sin hilos
+
+El término *race condition* (condición de carrera) no nació con el software. Viene de los circuitos electrónicos: cuando dos señales que salen del mismo punto recorren caminos distintos hasta una compuerta, "compiten" por llegar, y durante un instante la salida depende de cuál gane. De ahí pasó a la programación concurrente: **el resultado depende del orden o del momento en que terminan cosas que no controlas**.
+
+Casi todos los textos sobre carreras hablan de hilos que tocan la misma variable a la vez. Y en la lección del event loop viste que JavaScript eligió un solo hilo justamente para evitarlo: *run to completion*, una función síncrona corre hasta el final sin que nadie la interrumpa. ¿De dónde salen, entonces? De una distinción que conviene tener clara:
+
+- **Paralelismo** es ejecutar dos cosas literalmente al mismo tiempo (dos hilos en dos núcleos).
+- **Concurrencia** es tener varias tareas **en curso** a la vez, aunque se ejecuten por turnos.
+
+Tu código JavaScript no tiene paralelismo, pero sí concurrencia de sobra: mientras una petición viaja, otra puede salir, un timer dispararse y un clic atenderse. Y *run to completion* protege cada **tramo síncrono**, no la función entera: cada `await` la corta en tramos.
+
+<AntesDeSeguir>
+
+Un cajero con un control de saldo antes de "confirmar con el banco". El usuario pulsa "Retirar 80" dos veces muy rápido. ¿Qué imprime?
+
+```js
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+let saldo = 100;
+async function retirar(n) {
+  if (saldo < n) {
+    console.log("rechazado:", n);
+    return;
+  }
+  await wait(200); // "confirmar con el banco"
+  saldo -= n;
+  console.log("retirado:", n, "saldo:", saldo);
+}
+
+await Promise.all([retirar(80), retirar(80)]);
+```
+
+<Respuesta>
+
+```
+retirado: 80 saldo: 20
+retirado: 80 saldo: -60
+```
+
+La primera llamada comprueba el saldo (100, alcanza), llega al `await` y devuelve el control. La segunda empieza **antes** de que la primera reste nada, también ve 100 y pasa. 200 ms después, las dos restan.
+
+Ninguna línea se ejecutó a la vez que otra, pero entre la comprobación y la escritura hubo un hueco, y por ahí se coló la otra llamada. Si la confirmación fuera síncrona, la segunda vería saldo 20 y se rechazaría.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+<Callout type="clave">
+Un solo hilo te protege **dentro** de un tramo síncrono. Cada `await` es una costura: un punto donde otro código puede ejecutarse y cambiar lo que leíste antes. Si lees algo antes de un `await` y lo usas después, puede estar obsoleto.
+</Callout>
+
+<Profundiza titulo="de los circuitos a las bases de datos">
+
+En electrónica, el término ya se usaba en los años cincuenta; por ejemplo, aparece en la tesis doctoral de David A. Huffman de 1954 sobre la síntesis de circuitos de conmutación secuenciales.
+
+Las bases de datos, que siempre atendieron a muchos clientes a la vez, pusieron nombre a los patrones más comunes. El del cajero es un *check-then-act* (comprobar y luego actuar, con un hueco en medio); el del stock, más adelante, una **actualización perdida** (*lost update*). Su respuesta clásica, transacciones y operaciones atómicas, es la que aplicarás en el servidor.
+
+</Profundiza>
+
+---
+
+## La cocina, ahora con repartidores
+
+Vuelve a la cocina del event loop: **un solo cocinero** (el hilo), el riel de comandas (las tareas) y las notas pegadas a la comanda actual (las microtareas). Ahora fíjate en una pieza que ya estaba ahí: **los repartidores**.
+
+Cada `fetch` es un repartidor que sale a buscar algo al proveedor, por su cuenta, en paralelo. Si la función hace `await`, el cocinero aparta ese plato con una nota ("cuando vuelva el repartidor, sigue por aquí") y atiende otras comandas.
+
+Lo que el cocinero **no** controla es cuánto tarda cada repartidor. En la red, cada petición es independiente: puede pasar por un servidor distinto o por una caché, y su consulta puede ser más cara ("r" tiene muchos más resultados que "re"). Nada las pone en fila. Tampoco `await`: como viste en "async/await", suspende **solo esa llamada** a la función async. Otra llamada es otro plato apartado, con su propia nota y su propio repartidor.
+
+El primer síntoma del ticket: el usuario escribe "r" y, 100 ms después, "re". Salen dos repartidores y, cada vez que vuelve uno, el cocinero emplata lo que trae:
 
 | t (ms) | Qué pasa |
 |---|---|
-| 0 | El usuario escribe "r": sale la petición A |
-| 100 | Escribe "re": sale la petición B |
-| 200 | Llega B ("re") → se pinta. Correcto, de momento |
-| 400 | Llega A ("r") → se pinta **encima**. La pantalla queda con datos viejos |
+| 0 | El usuario escribe "r": sale el repartidor A |
+| 100 | Escribe "re": sale el repartidor B |
+| 200 | Vuelve B ("re") → se pinta. Correcto, de momento |
+| 400 | Vuelve A ("r") → se pinta **encima**. La pantalla queda con datos viejos |
+
+Esta pregunta pone a prueba exactamente esa línea de tiempo, con latencias simuladas:
 
 <Pregunta id="race-respuesta-vieja-gana" />
 
-La clave: el último en **llegar** gana, cuando lo que quieres es que gane el último en **salir**. Hay dos formas de conseguirlo, y en la práctica se combinan.
+La regla que aplica el cocinero sin darse cuenta: **gana el último en llegar**. Tú quieres que gane el último en **salir**, el que corresponde a lo que dice el input. Hay dos formas de conseguirlo, y en la práctica se combinan.
 
-## Solución 1: ignorar respuestas viejas
+---
 
-Numera las peticiones. Una variable compartida guarda el número de la última; cada llamada guarda **el suyo** en una constante local (un closure por llamada, como en el módulo de closures). Al volver del `await`, si los números no coinciden, la respuesta es vieja y se descarta.
+## Capa 1: el número en la bolsa
+
+Numera los pedidos. En la pared hay una **pizarra** con el número del último pedido; cada repartidor lleva en la bolsa **el suyo**. Cuando vuelve, si los números no coinciden, ese pedido ya no le importa a nadie y se tira.
+
+La pizarra es una variable compartida; el número de la bolsa, una constante local de cada llamada (un closure por llamada, como en el módulo de closures):
 
 ```js
 let lastRequest = 0;
 
 async function onInput(q) {
-  const requestId = ++lastRequest; // la de esta llamada, no cambia
+  const requestId = ++lastRequest; // el de esta llamada, no cambia
   const results = await search(q);
   if (requestId !== lastRequest) return; // alguien salió después que yo
   render(results);
 }
 ```
 
+`lastRequest` es una para todos y cambia con cada llamada; `requestId` es una por llamada y se fija al salir. Al volver del `await`, compararlas responde a "¿salió alguien después de mí?".
+
+Esta pregunta te pide seguir el contador en el mismo escenario de antes:
+
 <Pregunta id="race-id-de-peticion" />
 
-Esto es **"el último gana"** (*latest wins*). Es correcto, pero la petición vieja se sigue descargando y procesando: solo tiras el resultado.
+Esto es **"el último gana"** (*latest wins*). Pero ojo con lo que dice el nombre: el último en **salir**, no en llegar.
 
-## Solución 2: abortar la anterior
+<AntesDeSeguir>
 
-Con lo que viste en "fetch y cancelación", puedes cancelar de verdad la petición anterior: el servidor puede dejar de trabajar (si la conexión se corta a tiempo), no descargas datos inútiles y el `fetch` viejo se rechaza con un `AbortError`.
+Mismo código que la pregunta anterior, pero ahora las dos búsquedas tardan 400 ms y "re" sale 200 ms después. La respuesta de "r" llega **primero**, con la pantalla aún vacía. ¿Se pinta?
+
+```js
+const latency = { r: 400, re: 400 };
+// fakeSearch y onInput, iguales que en la pregunta anterior
+
+onInput("r");                         // sale en t = 0, vuelve en t = 400
+setTimeout(() => onInput("re"), 200); // sale en t = 200, vuelve en t = 600
+```
+
+<Respuesta>
+
+```
+descarta: r
+pinta: resultados de re
+```
+
+Aunque llega antes, "r" ya no es la última que salió: en t = 200 la pizarra pasó a 2. Se descarta, y es lo que quieres: mostrarla un instante sería un parpadeo de datos que no corresponden al input. El patrón no mira **cuándo** llega cada respuesta, sino **quién** salió último.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Es correcto, pero el repartidor viejo hace el viaje completo: la petición se sigue descargando y procesando, y solo tiras el resultado.
+
+---
+
+## Capa 2: llamar al repartidor para que vuelva
+
+Con lo que viste en "fetch y cancelación", puedes **llamar al repartidor para que dé la vuelta**: `AbortController`. Abortar cierra la conexión si sigue abierta, así que no descargas datos inútiles, el servidor puede dejar de trabajar (si la conexión se corta a tiempo) y el `fetch` viejo se rechaza con un `AbortError`.
 
 ```js
 let controller = null;
@@ -70,13 +189,62 @@ async function onInput(q) {
 }
 ```
 
+¿Sobra entonces el número en la bolsa? No: el teléfono solo sirve si el repartidor lo lleva encima. La señal solo cancela lo que **la escucha**.
+
+<AntesDeSeguir>
+
+Aquí `wait(ms, signal)` hace de `fetch`: respeta la señal y rechaza si se aborta. Después de la "descarga" hay un "procesado" (otro `await`) que no recibe la señal. La búsqueda nueva aborta la anterior. ¿Qué imprime?
+
+```js
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(id);
+      reject(signal.reason);
+    });
+  });
+}
+
+let controller = null;
+async function onInput(q, redMs, procesoMs) {
+  controller?.abort();
+  controller = new AbortController();
+  try {
+    await wait(redMs, controller.signal); // la "descarga": mira la señal
+    await wait(procesoMs);                // el "procesado": no la mira
+    console.log("pinta:", q);
+  } catch (error) {
+    console.log("cancelada:", q, error.name);
+  }
+}
+
+onInput("r", 200, 800);                         // descarga hasta 200, procesa hasta 1000
+setTimeout(() => onInput("re", 200, 200), 400); // descarga hasta 600, procesa hasta 800
+```
+
+<Respuesta>
+
+```
+pinta: re
+pinta: r
+```
+
+Cuando "re" aborta en t = 400, la descarga de "r" ya terminó (en t = 200): está en el procesado, que no mira la señal. El `abort()` no tiene a quién avisar, nada se rechaza y "r" pinta en t = 1000, **encima** de "re". La carrera ha vuelto.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
 <Callout type="cuidado">
 Abortar no siempre basta por sí solo. Mientras dura el `fetch` o la lectura del cuerpo (`res.json()`), la señal te cubre: las dos rechazan con `AbortError`. Pero si después haces más trabajo asíncrono que no mira la señal (otro `await` sin `signal`), o si la operación no acepta un `signal` (una función de una librería, un cálculo en un worker), el resultado viejo puede colarse. Abortar **ahorra trabajo**; comprobar que la respuesta sigue siendo la última **garantiza la corrección**. En código robusto se hacen las dos cosas.
 </Callout>
 
-## En React: el flag `ignore` en la limpieza del efecto
+---
 
-react.dev recomienda exactamente la solución 1 para pedir datos en un efecto, con un detalle elegante: en vez de un contador global, usa una variable local de **cada ejecución del efecto**.
+## Capa 3: en React, la comanda tachada
+
+Ahora el efecto del ticket. Para pedir datos en un efecto, react.dev recomienda la capa 1 con un detalle elegante: en vez de una pizarra global, cada ejecución del efecto tiene **su propia comanda**, y cuando deja de valer, la limpieza la tacha.
 
 ```jsx
 useEffect(() => {
@@ -99,7 +267,44 @@ Funciona porque React ejecuta la limpieza del efecto anterior **antes** de ejecu
 | 200 | Llega "re": su callback lee `ignoreB` (false) → `setResults` |
 | 400 | Llega "r": su callback lee `ignoreA` (true) → no hace nada |
 
-Son dos variables distintas que se llaman igual, igual que cada render tiene su propio `count`. El mismo mecanismo que en "Closures" te causaba el intervalo atascado aquí juega a tu favor: el callback viejo ve **su** variable, y la limpieza la marcó.
+Son dos variables distintas que se llaman igual, igual que cada render tiene su propio `count`. El mismo mecanismo que en "Closures" te causaba el intervalo atascado aquí juega a tu favor: el callback viejo ve **su** variable, y la limpieza la marcó. Por eso que el `let` esté **dentro** del efecto no es estilo: es todo el mecanismo.
+
+<AntesDeSeguir>
+
+Esta simulación imita a React: `efecto` hace de `useEffect` y devuelve su limpieza. La diferencia es que `ignore` está declarada **fuera**: una sola variable para todas las ejecuciones. "r" sale en t = 0 y tarda 600 ms; "re" sale en t = 200 y tarda 200 ms. ¿Qué imprime?
+
+```js
+let ignore; // una sola variable, fuera del "efecto"
+
+function efecto(query, ms) {
+  ignore = false;
+  setTimeout(() => {
+    if (!ignore) console.log("setResults:", query);
+  }, ms);
+  return () => {
+    ignore = true;
+  };
+}
+
+const limpiarA = efecto("r", 600); // la respuesta de "r" llega en t = 600
+setTimeout(() => {
+  limpiarA();          // React limpia el efecto anterior...
+  efecto("re", 200);   // ...y ejecuta el nuevo: "re" llega en t = 400
+}, 200);
+```
+
+<Respuesta>
+
+```
+setResults: re
+setResults: r
+```
+
+La limpieza pone `ignore` en `true`, pero el efecto siguiente la devuelve a `false` en la misma tanda. Cuando llega "r", lee esa única variable, ve `false` y pinta encima. Con el `let` dentro, cada ejecución tiene su casilla y nadie "destacha" la de otra.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 En la limpieza también puedes abortar (`controller.abort()`), y es buena idea: ahorras la petición. De paso, esta limpieza hace que el doble montaje de StrictMode en desarrollo no deje dos respuestas compitiendo.
 
@@ -107,9 +312,13 @@ En la limpieza también puedes abortar (`controller.abort()`), y es buena idea: 
 Por todo esto react.dev desaconseja escribir a mano la obtención de datos en efectos para casos reales: hay carreras, caché, reintentos, deduplicación… TanStack Query (o SWR) asocia cada resultado a una clave (`["search", query]`), así que la respuesta de una clave vieja no se muestra en la actual; además deduplica peticiones iguales y, si tu `queryFn` usa el `signal` que recibe, cancela las que ya nadie observa. En Next.js, los datos que lee un Server Component no tienen este problema en el cliente: no hay un efecto que dispare peticiones que compitan. Pero entender la carrera es lo que te permite saber qué te están resolviendo.
 </Callout>
 
-## Leer, modificar, escribir con un `await` en medio
+---
 
-No todas las carreras son respuestas fuera de orden. Otra muy común: dos tareas leen un valor compartido, esperan algo, y escriben un valor calculado a partir de lo que leyeron.
+## Capa 4: dos comandas que leen la misma despensa
+
+Otra carrera no necesita respuestas fuera de orden. Dos comandas necesitan tomates: cada una mira la despensa, apunta "quedan 10", manda a confirmar y, cuando vuelve su repartidor, escribe "10 menos lo mío". La segunda en escribir borra la cuenta de la primera.
+
+Esta pregunta pone a prueba si ves dónde se pierde la cuenta en código:
 
 <Pregunta id="race-leer-modificar-escribir" />
 
@@ -121,7 +330,7 @@ Lo que pasa es una **actualización perdida** (*lost update*):
 | 100 | escribe 10 − 2 | (esperando) | 8 |
 | 300 | | escribe 10 − 3 | 7 |
 
-JavaScript es de un solo hilo, así que dentro de un tramo síncrono nadie te interrumpe. Pero **cada `await` es un punto donde otro código puede ejecutarse** y cambiar lo que leíste. Cualquier valor que leas antes de un `await` y uses después puede estar obsoleto.
+Es la costura del cajero: dentro de un tramo síncrono nadie te interrumpe, pero **cada `await` es un punto donde otro código puede ejecutarse** y cambiar lo que leíste. El arreglo, en memoria, es que la lectura y la escritura caigan en el **mismo tramo síncrono**: leer `stock` después del `await`, justo al restar.
 
 En React es el mismo bug con otra cara:
 
@@ -132,23 +341,77 @@ async function addItem(text) {
 }
 ```
 
-Si añades dos elementos rápido, el segundo `setItems` parte de un `items` que no contiene el primero y lo borra. La solución es la que ya conoces: `setItems((prev) => [...prev, saved])`, que lee el valor **en el momento de escribir**. En el servidor, el equivalente es una operación atómica (`UPDATE ... SET stock = stock - 3`) o una transacción, nunca "leer, restar en JS, escribir".
+Si añades dos elementos rápido, el segundo `setItems` parte de un `items` que no contiene el primero y lo borra. La solución es la que ya conoces: `setItems((prev) => [...prev, saved])`, que lee el valor **en el momento de escribir**. Si la despensa está en el servidor, compartida por muchos usuarios, tu tramo síncrono ya no te protege: otra petición puede entrar entre tu lectura y tu escritura. El equivalente es una operación atómica (`UPDATE ... SET stock = stock - 3`) o una transacción, nunca "leer, restar en JS, escribir".
 
-## Doble envío de formularios
+---
 
-El "Guardar" duplicado es una carrera entre dos clics. Defensas, de la más superficial a la más sólida:
+## Capa 5: el cliente que toca el timbre dos veces
+
+El pedido duplicado del ticket es una carrera entre dos clics: dos comandas idénticas en el riel. La defensa obvia es un flag de "ya estoy enviando". La pregunta es **dónde** lo activas.
+
+<AntesDeSeguir>
+
+El handler comprueba un flag, valida el carrito (200 ms), activa el flag y crea el pedido (400 ms). El usuario hace doble clic. ¿Cuántos pedidos se crean?
+
+```js
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+let enviando = false;
+let pedidos = 0;
+
+async function guardar(clic) {
+  if (enviando) {
+    console.log("clic", clic, "ignorado");
+    return;
+  }
+  await wait(200);   // validar el carrito
+  enviando = true;
+  await wait(400);   // crear el pedido
+  pedidos++;
+  enviando = false;
+  console.log("clic", clic, "crea un pedido");
+}
+
+guardar(1);
+guardar(2); // doble clic
+setTimeout(() => console.log("pedidos:", pedidos), 1200);
+```
+
+<Respuesta>
+
+```
+clic 1 crea un pedido
+clic 2 crea un pedido
+pedidos: 2
+```
+
+El *check-then-act* del cajero otra vez: el segundo clic comprueba el flag mientras el primero está en el `await` de la validación, antes de activarlo. Con `enviando = true` justo después del `if`, en el mismo tramo síncrono, el segundo clic imprimiría "ignorado".
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Con eso tienes las defensas, de la más superficial a la más sólida:
 
 1. **Deshabilitar el botón mientras se envía.** Con un estado `pending` (lo que te dan `useActionState`, `useFormStatus` o `useTransition`). Cubre el caso típico del doble clic.
 2. **Un guard síncrono** si no pasas por estado de React: un flag en una variable (o `useRef`) que compruebas y activas en la misma línea síncrona, antes de cualquier `await`. Si lo activas después del `await`, el segundo clic ya entró.
 3. **Idempotencia en el servidor.** El botón deshabilitado no protege de dos pestañas, de un reintento automático tras un timeout ni de un usuario con la red caída que recarga. Genera una clave por intención de envío (por ejemplo `crypto.randomUUID()` al abrir el formulario), mándala con la petición, y que el servidor ignore la segunda petición con la misma clave. Así repetir la operación da el mismo resultado que hacerla una vez.
 
+*Idempotente* viene de las matemáticas (aplicar algo dos veces da lo mismo que una), y HTTP la usa así: la especificación define como idempotentes `PUT`, `DELETE` y los métodos de solo lectura como `GET`, pero no `POST`. Por eso un `POST` que se repite crea dos pedidos, y por eso hay APIs, como la de pagos de Stripe, que aceptan una cabecera `Idempotency-Key` para que el cliente pueda reintentar sin miedo.
+
 <Callout type="clave">
 Una race condition aparece siempre que dos tareas asíncronas se solapan y el resultado depende de cuál termina antes. Las preguntas que debes hacerte: ¿puede esta operación lanzarse dos veces antes de que termine la primera? ¿Leo algo antes de un `await` que uso después?
 </Callout>
 
-## Debounce: esperar a que el usuario pare
+---
 
-Volvamos al buscador. Aunque arregles la carrera, pedir resultados en cada tecla es un desperdicio: para "react" lanzas 5 peticiones y solo te interesa la última. **Debounce** retrasa la ejecución hasta que pasan X ms **sin llamadas nuevas**. Cada llamada reinicia la cuenta atrás.
+## Segundo acto: cuántas veces dejas que empiece
+
+Hasta aquí decidiste **qué respuesta vale**. El tercer síntoma es otro problema: para buscar "react" lanzas 5 peticiones y solo te interesa la última. Aunque arregles la carrera, es un desperdicio: hay que **mandar menos** repartidores.
+
+La palabra *debounce* viene de la electrónica. Al pulsar un interruptor mecánico, los contactos no se cierran limpiamente: **rebotan** (*bounce*) varias veces durante unos milisegundos, y un circuito rápido vería varias pulsaciones donde hubo una. *Debouncing* es filtrar ese ruido; por ejemplo, un teclado espera a que la señal se estabilice antes de dar la pulsación por buena. Aquí es igual: escribir "react" produce cinco eventos para una sola intención. **Debounce** retrasa la ejecución hasta que pasan X ms **sin llamadas nuevas**. Cada llamada reinicia la cuenta atrás.
+
+En la cocina, un cliente en el mostrador no para de cambiar su pedido. Para no tirar cuatro platos, el cocinero pone el **temporizador del horno** (un `setTimeout`) en 300 ms y solo empieza cuando suena. Cada cambio de idea **reinicia** el temporizador.
 
 ```js
 function debounce(fn, ms) {
@@ -171,20 +434,94 @@ Con `ms = 300` y un usuario que escribe "re", hace una pausa y sigue:
 | 850 | "reac" | cancela; ejecutar "reac" en 1150 |
 | 1150 | | **se ejecuta con "reac"** |
 
-Todo depende del closure: si cada llamada tuviera su propio `timer`, `clearTimeout` no podría cancelar el de la anterior.
+Todo depende de que haya **un solo temporizador** para todas las llamadas, y eso es lo que más fácil se rompe.
+
+<AntesDeSeguir>
+
+Alguien "simplificó" el `debounce` moviendo la declaración de `timer` dentro de la función devuelta. Tres llamadas seguidas. ¿Qué imprime?
+
+```js
+function debounceRoto(fn, ms) {
+  return (...args) => {
+    let timer; // dentro: una variable nueva en cada llamada
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+const buscar = debounceRoto((q) => console.log("busca:", q), 300);
+buscar("r");
+buscar("re");
+buscar("rea");
+```
+
+<Respuesta>
+
+```
+busca: r
+busca: re
+busca: rea
+```
+
+Cada llamada crea su propio `timer` en `undefined`; `clearTimeout(undefined)` no cancela nada, y el temporizador anterior queda en una variable que ya nadie puede tocar. Cada cambio de idea con su propio horno. Guarda esta imagen: volverá en React.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 Dos extras que tienen las implementaciones de librerías (lodash, por ejemplo):
 
 - **`cancel()`**: descarta la ejecución pendiente. Imprescindible al desmontar un componente, para que no se ejecute algo sobre una pantalla que ya no existe.
 - **`flush()`**: ejecuta ya la pendiente. Útil en un autoguardado: guardas con debounce mientras el usuario escribe, pero al salir del campo (`blur`) o de la página haces `flush()` para no perder lo último.
 
+Esta pregunta pone a prueba si sigues el temporizador compartido con un `cancel()` en medio:
+
 <Pregunta id="debounce-cancel-linea-tiempo" />
 
 **Leading y trailing.** Lo que acabas de ver es *trailing*: ejecuta al **final** de la ráfaga. La variante *leading* ejecuta en la **primera** llamada y luego ignora hasta que haya X ms de silencio (útil para un botón: responde al instante y absorbe los clics repetidos). Las librerías permiten activar uno, otro o ambos.
 
-## Throttle: como mucho una vez cada X ms
+---
 
-Debounce tiene un problema con eventos continuos: si el usuario hace scroll sin parar durante 5 segundos, un debounce de 200 ms no ejecuta **nada** hasta que para. Para scroll, resize o el movimiento del ratón quieres lo contrario: ejecutar **a un ritmo máximo** mientras dura la ráfaga. Eso es **throttle**.
+## Throttle: la ventanilla
+
+Debounce tiene un punto ciego con los eventos continuos.
+
+<AntesDeSeguir>
+
+Con el `debounce` de antes, de 500 ms, y un usuario que hace scroll sin parar (un evento cada 300 ms), ¿cuántas veces se actualiza la vista mientras dura el scroll?
+
+```js
+const actualizar = debounce((y) => console.log("actualiza con", y), 500);
+
+// el usuario hace scroll sin parar: un evento cada 300 ms durante 1,8 s
+for (let y = 0; y <= 1800; y += 300) {
+  setTimeout(() => {
+    console.log("scroll", y);
+    actualizar(y);
+  }, y);
+}
+```
+
+<Respuesta>
+
+```
+scroll 0
+scroll 300
+scroll 600
+scroll 900
+scroll 1200
+scroll 1500
+scroll 1800
+actualiza con 1800
+```
+
+Ninguna: cada evento llega antes de los 500 ms de silencio y reinicia la cuenta. Solo cuando el usuario para se ejecuta, en t = 2300. Para un buscador es perfecto; para un scroll infinito, la vista se congela durante todo el gesto.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Para scroll, resize o el movimiento del ratón quieres lo contrario: ejecutar **a un ritmo máximo** mientras dura la ráfaga. Eso es **throttle**, que en inglés es la válvula que regula un flujo (la del acelerador de un motor); MDN recoge ese origen: frenar el ritmo de un fluido con un obstáculo. En la cocina es una **ventanilla** de pase: cuando sale un plato, se cierra X ms y lo que llegue mientras tanto no pasa. Al abrirse, el siguiente sale en el acto.
 
 ```js
 function throttle(fn, ms) {
@@ -200,7 +537,11 @@ function throttle(fn, ms) {
 }
 ```
 
+A diferencia del debounce, las llamadas ignoradas **no** reinician nada: la ventana se mide desde la ejecución.
+
 Esta versión es *leading* sin *trailing*: la última llamada de la ráfaga puede perderse. Si necesitas que el estado final siempre se procese (la posición final del scroll), añade un trailing: guarda los últimos argumentos ignorados y ejecútalos al cerrarse la ventana.
+
+Esta pregunta pasa la misma ráfaga de eventos por los dos, para que compares sus salidas:
 
 <Pregunta id="throttle-vs-debounce-salida" />
 
@@ -215,15 +556,19 @@ Esta versión es *leading* sin *trailing*: la última llamada de la ráfaga pued
 | Recalcular layout en `resize` | throttle (o debounce si solo importa el tamaño final) | Ritmo acotado mientras se arrastra |
 | Botón que no debe dispararse dos veces | debounce leading, o deshabilitar | Responder al primer clic e ignorar los demás |
 
+Para animaciones ligadas al scroll, el throttle natural no es un número de milisegundos sino el ritmo de pintado del navegador: `requestAnimationFrame` ejecuta como mucho una vez por frame. En la cocina del event loop, es la nota que el cocinero lee justo antes de emplatar.
+
 <Callout type="cuidado">
 Debounce **no** arregla la race condition. Reduce el número de peticiones, pero si el usuario pausa 300 ms, escribe otra letra y la primera petición tarda 2 segundos, vuelves a tener dos peticiones en vuelo. Debounce y "el último gana" son complementarios: uno decide **cuándo** pedir, el otro **qué respuesta** vale.
 </Callout>
 
-Para animaciones ligadas al scroll, el throttle natural no es un número de milisegundos sino el ritmo de pintado del navegador: `requestAnimationFrame` ejecuta como mucho una vez por frame.
+---
 
 ## Debounce en React
 
-Aquí vuelve a morder el modelo de "cada render es una llamada nueva":
+Volvamos al debounce del ticket. Ya viste qué pasa cuando cada llamada tiene su propio temporizador, y en React es muy fácil provocarlo sin darte cuenta, porque cada render es una llamada nueva a tu componente.
+
+Esta pregunta pone a prueba si ves de dónde sale cada temporizador:
 
 <Pregunta id="debounce-recreado-en-render" />
 
@@ -275,23 +620,44 @@ function Buscador() {
 }
 ```
 
-Fíjate en que cada cambio de `value` ejecuta la limpieza del efecto anterior (cancela su timer) y programa uno nuevo: es el mismo `clearTimeout` + `setTimeout` de `debounce`, pero el "closure compartido" lo pone React. Y el efecto que pide datos sigue llevando su flag `ignore`, porque el debounce no elimina la carrera.
+Fíjate en que cada cambio de `value` ejecuta la limpieza del efecto anterior (cancela su timer) y programa uno nuevo: es el mismo `clearTimeout` + `setTimeout` de `debounce`, pero el "closure compartido" lo pone React. Y el efecto que pide datos sigue llevando su flag `ignore`, porque el debounce no elimina la carrera. La misma limpieza, dos trabajos: tachar la comanda vieja y reiniciar el temporizador del horno.
 
 <Callout type="nota">
 `useDeferredValue` no es un debounce. No espera un tiempo fijo: React renderiza primero con el valor viejo y prepara el nuevo en segundo plano, interrumpible y adaptado a la velocidad del dispositivo. Sirve para que un **render** caro no bloquee el input. Si lo que quieres es lanzar **menos peticiones de red**, react.dev indica que debounce y throttle siguen siendo la herramienta.
 </Callout>
 
+---
+
+## El ticket, resuelto
+
+Vuelve al #731 y léelo con lo que sabes ahora.
+
+**¿Por qué la lista muestra resultados de "r"?** Cada tecla manda un repartidor y el efecto pinta lo que traiga cualquiera. "r" es más cara y llega después que "re": gana el último en llegar, no el último en salir. Con tu red casi nunca pasa; con la de un usuario real, sí. Arreglo: un `let ignore` dentro del efecto que la limpieza pone en `true`, y un `abort()` para ahorrar la petición.
+
+**¿Cómo hay una carrera con un solo hilo?** El hilo protege cada tramo síncrono, no la operación completa. Entre el clic y el pedido hay `await`, y por esas costuras entró el segundo clic: nada se ejecutó a la vez, pero dos operaciones estaban **en curso** a la vez. Arreglo: botón deshabilitado con `pending`, guard antes del primer `await` y, sobre todo, una clave de idempotencia en el servidor.
+
+**¿Por qué el debounce no ahorró nada?** Cada tecla provoca un render, cada render crea un `debounce` nuevo con su temporizador, y el `clearTimeout` de uno no cancela el del otro: el `debounceRoto` con otra cara. Arreglo: crear la función una vez (y cancelarla al desmontar) o debouncear el valor con `useDebouncedValue`.
+
+**¿Arregla el debounce el primer síntoma?** No. Reduce las peticiones, pero si el usuario pausa y la primera tarda, vuelve a haber dos en vuelo. Hacen falta las dos cosas, debounce para decidir **cuándo** pedir e `ignore` para decidir **qué respuesta** vale: el `Buscador` de la opción B.
+
+---
+
 ## Práctica
+
+El ticket quedó resuelto en el componente, pero las piezas que usaste merecen ser tuyas. Primero, el debounce que no estaba dentro del componente: escribe `debounce` con `cancel()` y `flush()` (los que necesita el autoguardado y el desmontaje) y un `throttle` de ventanilla.
 
 <Ejercicio id="debounce-throttle-implementar" />
 
+Después, junta las capas 1 y 2 en una sola herramienta reutilizable: `latestOnly` envuelve cualquier función asíncrona, le pasa una señal que se aborta cuando llega una llamada nueva y descarta cualquier respuesta (o error) que ya no sea la última, aunque llegue primero.
+
 <Ejercicio id="race-latest-only" />
 
-## Resumen
+---
 
-- Las respuestas asíncronas llegan en el orden que decide la red, no en el que salieron. `await` no serializa llamadas distintas.
-- **El último gana**: numera las peticiones (o usa el flag `ignore` de la limpieza del efecto) y descarta las viejas; además, **aborta** la anterior para ahorrar trabajo.
-- Leer un valor antes de un `await` y escribir algo calculado con él después pierde actualizaciones: calcula sobre el valor actual (updater de `setState`, operación atómica en el servidor).
-- Doble envío: deshabilita mientras está pendiente y haz la operación **idempotente** en el servidor.
-- **Debounce** ejecuta tras X ms de silencio (búsqueda, autoguardado); **throttle**, como mucho una vez cada X ms (scroll, resize). Ambos viven de un closure con el timer.
-- En React, crea la función debounceada una vez (y cancélala al desmontar) o debouncea el valor con un efecto cuya limpieza hace `clearTimeout`. Debounce no sustituye a la protección contra carreras.
+## Lo que ahora puedes explicar
+
+Empezaste este módulo con un cocinero solo y una pregunta: qué hace el navegador entre línea y línea de tu código. Luego llegaron las promesas (un plato que todavía no está listo), `async`/`await` (escribir esa espera sin perder el hilo), `fetch` (el repartidor) y `AbortController` (el teléfono para hacerlo volver). Esta lección es lo que pasa cuando todo eso funciona **a la vez**.
+
+Ahora puedes explicar por qué un lenguaje de un solo hilo tiene carreras (cada `await` es una costura), por qué la respuesta que gana es la última en llegar y no la última en salir, por qué abortar ahorra trabajo pero solo comprobar garantiza el resultado, y por qué leer algo antes de un `await` y escribir con ello después pierde actualizaciones. Y sabes que debounce y throttle no resuelven carreras: deciden cuántas veces dejas que algo empiece, uno esperando al silencio y el otro marcando un ritmo.
+
+Lo pondrás en práctica en el proyecto del módulo, un buscador contra una API real con debounce, cancelación y manejo de errores. Y lo reencontrarás en React: al estudiar `useEffect` a fondo verás que su limpieza sirve justo para tachar comandas y apagar temporizadores, y que las "closures obsoletas" son el `items` viejo de la capa 4. Cuando llegues a pedir datos en efectos, a TanStack Query y a los Server Components, reconocerás cada problema que te resuelven, porque ya lo resolviste a mano.
