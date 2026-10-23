@@ -8,9 +8,9 @@ export const closures: LessonDef = {
   slug: "closures",
   title: "Closures",
   summary:
-    "Por qué un setInterval dentro de useEffect se queda atascado: funciones que recuerdan el scope donde nacieron.",
+    "Un contador que se queda en 1 te lleva al scope léxico y a los closures: funciones que guardan la llave del entorno donde nacieron, y por qué cada render de React tiene el suyo.",
   concepts: ["js.closures", "react.stale-closures"],
-  minutes: 35,
+  minutes: 40,
   questions: preguntas,
   exercises: [once, contador],
   videos: [
