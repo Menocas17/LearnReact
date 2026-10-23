@@ -8,9 +8,9 @@ export const fetchYCancelacion: LessonDef = {
   slug: "fetch-y-cancelacion",
   title: "fetch y cancelación",
   summary:
-    "Por qué tu pantalla de error nunca sale con un 500 y por qué un perfil muestra al usuario equivocado: Response, res.ok, el cuerpo que se lee una vez y AbortController.",
+    "Por qué fetch no falla con un 500 (una regla que viene de XMLHttpRequest), por qué el cuerpo se lee una vez y por qué una promesa no se puede cancelar: Response, res.ok, AbortController y AbortSignal, contados con un mensajero y un walkie-talkie.",
   concepts: ["async.fetch", "async.abort"],
-  minutes: 40,
+  minutes: 55,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
