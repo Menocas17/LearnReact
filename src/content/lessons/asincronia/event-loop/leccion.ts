@@ -8,9 +8,9 @@ export const eventLoop: LessonDef = {
   slug: "event-loop",
   title: "El event loop",
   summary:
-    "Por qué un \"Cargando…\" nunca llega a verse y un setTimeout(fn, 0) no es inmediato: un solo hilo, una cola de tareas, una de microtareas y el pintado entre medias.",
+    "Un botón que dice \"Exportando…\" y nunca se ve: un solo cocinero, un riel de tareas, notas de microtareas y el pintado entre medias. Timers, INP, requestAnimationFrame y por qué React agrupa tus setState.",
   concepts: ["async.event-loop", "async.callbacks", "async.render-navegador"],
-  minutes: 40,
+  minutes: 50,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
