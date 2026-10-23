@@ -8,9 +8,9 @@ export const thisLesson: LessonDef = {
   slug: "this",
   title: "this",
   summary:
-    "Por qué onClick={this.handleClick} rompía las clases de React: this se decide al llamar la función, no al definirla.",
+    "Un editor de clases que pierde this al hacer clic: por qué JavaScript decide this en cada llamada, cómo lo fijan bind y las arrow functions, y por qué React acabó en los hooks.",
   concepts: ["js.this", "js.call-apply-bind", "js.modo-estricto"],
-  minutes: 40,
+  minutes: 50,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
