@@ -34,6 +34,7 @@ export const variablesYFunciones: LessonDef = {
       title: "MDN: El objeto arguments",
       url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Functions/arguments",
     },
+    { title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020), §2", url: "https://dl.acm.org/doi/10.1145/3386327" },
     { title: "react.dev: Responder a eventos", url: "https://es.react.dev/learn/responding-to-events" },
     { title: "react.dev: Renderizado de listas", url: "https://es.react.dev/learn/rendering-lists" },
   ],

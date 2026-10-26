@@ -31,8 +31,8 @@ El arreglo rápido devolvió el `return` y dejó a la vista el cambio del botón
 <button onClick={onDelete(item.id)}>Borrar</button>
 ```
 
-Ahora cada tarea se borra **al renderizar la lista**, sin que nadie haga clic (o, si borrar
-cambia estado, React acaba quejándose de demasiados renders). Tres preguntas:
+Ahora cada tarea se borra **al renderizar la lista**, sin que nadie haga clic (y, en desarrollo,
+React avisa de que se actualiza un componente mientras se renderiza otro). Tres preguntas:
 
 1. ¿Por qué un `map` que claramente escribe un `<TodoItem>` por tarea devuelve una lista vacía, y
    sin un solo error?
@@ -45,8 +45,8 @@ Ninguna es un problema de React: son reglas de JavaScript, y tienen historia.
 
 ## Dos épocas en el mismo lenguaje
 
-Durante sus primeros veinte años, JavaScript tuvo una sola forma de declarar variables (`var`) y
-una sola forma de escribir funciones (`function`). La edición de 2015 del estándar (ECMAScript
+Durante sus primeros veinte años, el estándar de JavaScript tuvo una sola forma de declarar
+variables (`var`) y una sola palabra para escribir funciones (`function`). La edición de 2015 del estándar (ECMAScript
 2015, también llamada ES6) añadió de golpe casi todo lo que usas a diario: `let`, `const`, las
 arrow functions, los parámetros por defecto y los parámetros rest.
 
@@ -93,7 +93,7 @@ number undefined
 `a` se declaró con `var`, que ignora las llaves del `if`: la etiqueta pertenece a la función que
 lo contiene (o al nivel superior del archivo). `b` desaparece al cerrar la llave, y `typeof` sobre un nombre que no existe
 devuelve `"undefined"` en lugar de lanzar. El detalle de scope, hoisting y por qué usar `let` o
-`const` antes de su línea lanza un error está en la lección de scope y hoisting del módulo 3.
+`const` antes de su línea lanza un error está en la lección «Scope y hoisting» del módulo 3.
 
 </Respuesta>
 
@@ -158,7 +158,7 @@ function add(todo) {
 ```
 
 La solución es crear un array nuevo (`setTodos([...todos, todo])`); lo verás a fondo en la
-lección de valores y referencias.
+lección «Valores y referencias» del módulo 3.
 
 <Callout type="nota">
 Para congelar el contenido de verdad existe `Object.freeze`, pero es superficial y en la práctica casi no se usa: la convención en React es simplemente no mutar.
@@ -181,8 +181,8 @@ greet("Hola")("Ana"); // "Hola, Ana"
 ```
 
 (Que `greet("Hola")` recuerde `greeting` después de terminar es un closure; lo tienes en el
-módulo 3.) Las funciones como valores son herencia de Scheme, un dialecto de Lisp que influyó en
-el diseño original de JavaScript, y son la base de React: componentes, handlers, efectos.
+módulo 3.) Las funciones como valores vienen de la influencia de Scheme, un dialecto de Lisp que Eich
+admiraba y que marcó el diseño original de JavaScript, y son la base de React: componentes, handlers, efectos.
 
 Hay tres formas de fabricar una máquina:
 
@@ -239,7 +239,7 @@ hasta que se ejecuta su línea (la *TDZ*, que verás a fondo en el módulo 3).
 Las otras diferencias que importan en el día a día son de las arrows:
 
 - **No tienen `this` ni `arguments` propios**: usan los de la función donde se escribieron. Por
-  eso son las cómodas para callbacks. El detalle de `this` está en su propia lección del módulo 3.
+  eso son las cómodas para callbacks. El detalle de `this` está en su propia lección, «this», del módulo 3.
 - **No se pueden usar con `new`.**
 
 <Profundiza titulo="por qué las arrows no tienen this propio">
@@ -422,7 +422,7 @@ Una función es **pura** si con los mismos argumentos devuelve siempre lo mismo 
 fuera de ella: solo mira sus ranuras y solo escribe en su bandeja (no muta sus argumentos, no
 escribe variables externas, no hace peticiones). React espera eso de tus componentes durante el
 render; por eso `todos.push(...)` en un componente es un problema y `createTask` del ejercicio no
-debe mutar el array que recibe. El tema completo está en el módulo 6.
+debe mutar el array que recibe. El tema completo está en el módulo 6, «Programación funcional y patrones».
 
 ---
 

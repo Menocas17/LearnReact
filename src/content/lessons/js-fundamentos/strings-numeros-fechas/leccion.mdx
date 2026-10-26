@@ -1,15 +1,17 @@
 ## Tres síntomas, un mismo ticket
 
-> **#304 — "El checkout se ve raro en México".** El total sale como `0.30000000000000004 €`. La
+> **#304 — "El checkout se ve raro en México".** El total sale como `0.30000000000000004 MXN`. La
 > cita que reservé para el 14 sale el 13. Y el campo de notas dice que "ok 👍👍👍" pasa del
 > límite de 6 caracteres.
 
-En tu máquina, en España, todo se veía bien. El código es de los que escribes sin pensar:
+La tienda vende en pesos mexicanos y tú la programas desde España. En tu máquina la cita salía
+el día correcto, y nadie había probado ese carrito ni esa nota. El código es de los que escribes
+sin pensar:
 
 ```jsx
 function Total({ items }) {
   const total = items.reduce((sum, item) => sum + item.price, 0);
-  return <p>Total: {total} €</p>; // "Total: 0.30000000000000004 €"
+  return <p>Total: {total} MXN</p>; // "Total: 0.30000000000000004 MXN"
 }
 
 function Cita({ fecha }) {
@@ -35,8 +37,9 @@ nadie lee hasta que le muerden. Cuatro preguntas:
 Los tres síntomas vienen de decisiones tomadas cuando JavaScript nació en Netscape, en 1995, con
 la orden de parecerse a Java.
 
-**Texto.** Unicode se diseñó al principio para caber en 16 bits (65 536 posiciones). Java y
-JavaScript adoptaron eso: un string es una secuencia de **unidades de 16 bits** (UTF-16). Después
+**Texto.** Unicode se diseñó al principio para caber en 16 bits (65 536 posiciones). Java y,
+poco después, el estándar de JavaScript adoptaron eso: un string es una secuencia de **unidades de
+16 bits**, que hoy se interpretan como UTF-16. Después
 Unicode creció mucho más allá, y los caracteres que no caben (casi todos los emojis) se guardan
 como **dos** unidades, un *par subrogado* (*surrogate pair*). El lenguaje no podía cambiar qué
 cuenta `length` sin romper páginas existentes; ES2015 añadió formas nuevas de recorrer un string
@@ -50,7 +53,7 @@ enteros arbitrariamente grandes (`BigInt`) no llegaron hasta ES2020.
 **Fechas.** El `Date` de JavaScript 1.0 se tradujo directamente del `java.util.Date` de Java 1.0,
 con sus defectos: meses que empiezan en 0 y objetos que se modifican a sí mismos. Java declaró
 obsoletos la mayoría de esos métodos en su versión siguiente, la 1.1.
-JavaScript no podía: la web ya dependía de ellos. Es el mismo principio de la lección de tipos,
+JavaScript no podía: la web ya dependía de ellos. Es el mismo principio que viste en «Tipos y coerción»,
 **no romper la web**: los errores de diseño no se corrigen, se rodean.
 
 ---
@@ -58,10 +61,10 @@ JavaScript no podía: la web ya dependía de ellos. Es el mismo principio de la 
 ## Lo que se guarda y lo que se ve
 
 Esta imagen te acompaña toda la lección. JavaScript no guarda "texto", "0.1" ni "el 14 de
-octubre". Guarda **posiciones en una cinta con marcas fijas**. Lo que tú ves es una **etiqueta**
-que alguien imprime al leer la cinta.
+octubre". Guarda **posiciones en una cinta con marcas fijas**. Lo que tú ves es una **lectura**:
+lo que alguien imprime al leer la cinta.
 
-Los tres síntomas del ticket son lo mismo: la etiqueta que esperabas no coincide con lo que hay en
+Los tres síntomas del ticket son lo mismo: la lectura que esperabas no coincide con lo que hay en
 la cinta.
 
 ### Primera capa: la cinta del texto
@@ -131,7 +134,7 @@ expresión** con `${…}`, no solo variables, y admiten varias líneas:
 
 ```js
 const qty = 3;
-const msg = `Tienes ${qty} ${qty === 1 ? "artículo" : "artículos"} (${(qty * 4.5).toFixed(2)} €)`;
+const msg = `Tienes ${qty} ${qty === 1 ? "artículo" : "artículos"} (${(qty * 4.5).toFixed(2)} MXN)`;
 ```
 
 <AntesDeSeguir>
@@ -186,7 +189,7 @@ users.toSorted((a, b) => collator.compare(a.name, b.name));
 
 ### Segunda capa: la regla de los números
 
-En la lección de tipos, un `number` era una moneda. Ábrela: dentro hay una **regla** con un número
+En «Tipos y coerción», un `number` era una moneda. Ábrela: dentro hay una **regla** con un número
 enorme pero finito de marcas. Cada `number` es exactamente una marca. **Entre dos marcas no hay
 nada**: cualquier valor que quieras guardar se pega a la marca más cercana.
 
@@ -235,8 +238,9 @@ Esa es la siguiente capa.
 #### El dinero, en marcas enteras
 
 Si los enteros caen siempre en una marca, la regla práctica sale sola: **guarda y opera el dinero
-en la unidad mínima (céntimos) como entero**. Las sumas y multiplicaciones de enteros son exactas
-mientras no pasen de `Number.MAX_SAFE_INTEGER`. Conviertes a euros solo para mostrar.
+en la unidad mínima (céntimos; en México, centavos) como entero**. Las sumas y multiplicaciones de
+enteros son exactas mientras no pasen de `Number.MAX_SAFE_INTEGER`. Conviertes a pesos (o a la
+moneda que sea) solo para mostrar.
 
 <AntesDeSeguir>
 
@@ -291,7 +295,7 @@ mezcla `toFixed`, la tolerancia y la suma en céntimos:
   total de 0.
 
 Un `NaN` en React suele verse como un "NaN" en pantalla o un input que se queda vacío: la pista es
-que algún `Number(...)` recibió `undefined` o un string con formato (`"1,5"`, `"12 €"`).
+que algún `Number(...)` recibió `undefined` o un string con formato (`"1,5"`, `"$12"`).
 
 #### De la cinta del texto a la regla
 
@@ -399,7 +403,7 @@ de 1970 a las 00:00 UTC. Un `Date` es **una sola marca** en esa regla, un númer
 que obtienes con `getTime()` o `Date.now()`). No guarda zona horaria.
 
 La zona horaria la pone **quien lee**. Los métodos `getHours()`, `getDate()`, `toLocaleString()`…
-imprimen la etiqueta **en la zona del entorno** donde se ejecutan; los `getUTC*()` y
+imprimen la lectura **en la zona del entorno** donde se ejecutan; los `getUTC*()` y
 `toISOString()` la imprimen en UTC.
 
 <AntesDeSeguir>
@@ -425,8 +429,8 @@ console.log(ver("Asia/Tokyo"));
 14/10/26, 12:00
 ```
 
-Una marca, tres etiquetas. Fíjate en el `9`: los meses van de **0 a 11** (los días no), herencia
-directa de Java. Y en México, la etiqueta ya es del día anterior.
+Una marca, tres lecturas. Fíjate en el `9`: los meses van de **0 a 11** (los días no), herencia
+directa de Java. Y en México, la lectura ya es del día anterior.
 
 </Respuesta>
 
@@ -492,7 +496,7 @@ Y aquí está la idea que más bugs evita. No todo lo que parece una fecha es un
 - **Un instante** (cuándo se hizo un pedido, cuándo se envió un mensaje) sí es una marca. Guárdalo
   en UTC (ISO con `Z` o timestamp) y conviértelo a la zona del usuario **solo al mostrarlo**.
 - **Una fecha de calendario** (cumpleaños, fecha de una cita, "vence el 14") no es un instante, no
-  tiene zona: es una etiqueta. Lo más sencillo es tratarla como string `"YYYY-MM-DD"` y, cuando
+  tiene zona: es un texto fijo. Lo más sencillo es tratarla como string `"YYYY-MM-DD"` y, cuando
   necesites `Date`, hacer todo en UTC: parsear como solo fecha, usar `getUTC*`/`setUTC*` y
   formatear con `timeZone: "UTC"`.
 
@@ -505,9 +509,9 @@ verano hace que un "día" dure 23 o 25 horas. Usa fechas a medianoche UTC o redo
 
 ---
 
-### Quinta capa: imprimir etiquetas para personas
+### Quinta capa: imprimir lecturas para personas
 
-La última pieza es la impresora de etiquetas: `Intl`. Formatea según el idioma y las convenciones
+La última pieza es la impresora: `Intl`. Formatea según el idioma y las convenciones
 de cada país, sin librerías. Crea el formateador una vez y reutilízalo; y pasa siempre el
 **locale** de forma explícita, porque si no usa el del entorno (el servidor o el navegador).
 
@@ -538,7 +542,7 @@ decides tú restando fechas).
 
 <AntesDeSeguir>
 
-Un test compara el precio formateado. ¿Qué imprime?
+La tienda también vende en euros, y un test compara el precio formateado. ¿Qué imprime?
 
 ```js
 const eur = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
@@ -561,12 +565,12 @@ En tests, normaliza con `.replace(/\s/g, " ")` o usa `formatToParts`.
 
 </AntesDeSeguir>
 
-#### Dos impresoras, dos etiquetas: hydration mismatch
+#### Dos impresoras, dos lecturas: hydration mismatch
 
 En Next.js un Client Component se renderiza **dos veces**: en el servidor (para generar el HTML) y
 en el navegador (al hidratar). Son dos impresoras leyendo la misma marca. Si formateas una fecha
 sin locale ni zona, cada una usa los suyos: un servidor suele ejecutarse en UTC y en `en-US`; el
-navegador del usuario, en `America/Mexico_City` y `es-MX`. Las etiquetas no coinciden y React
+navegador del usuario, en `America/Mexico_City` y `es-MX`. Las lecturas no coinciden y React
 avisa con un error de hidratación. Esta pregunta te pide elegir el arreglo que de verdad iguala las
 dos:
 
@@ -590,8 +594,9 @@ lo sustituye, con tipos separados como `Temporal.PlainDate` (fecha de calendario
 `Temporal.ZonedDateTime` (instante con zona), todos inmutables. Es justo la distinción de esta
 lección, convertida en tipos.
 
-Según la tabla de compatibilidad de MDN (octubre de 2026), ya está en Firefox (139+), Chrome y Edge
-(144+) y Node.js 26, pero Safari solo la tiene en su versión de pruebas, así que todavía no es
+A fecha de octubre de 2026, según la tabla de compatibilidad de MDN, ya está en Firefox (139+),
+Chrome y Edge (144+) y Node.js 26, pero Safari solo la tiene en su versión de pruebas
+(*Technology Preview*), así que todavía no es
 *Baseline*. Tampoco está en Node 22, el que asume esta lección. Mientras no puedas contar con ella
 en todos tus entornos, aplica estas reglas con `Date` e `Intl` (o usa una librería como date-fns).
 
@@ -603,8 +608,8 @@ en todos tus entornos, aplica estas reglas con `Date` e `Intl` (o usa una librer
 
 **¿Por qué `0.1 + 0.2` no da `0.3`?** Porque `0.1` y `0.2` no caen en ninguna marca de la regla
 binaria: se guardan aproximados, y su suma se pega a la marca de `0.30000000000000004`. El arreglo
-es trabajar en céntimos enteros, que siempre caen en una marca, y convertir a euros solo al
-imprimir la etiqueta con `Intl.NumberFormat`.
+es trabajar en céntimos enteros, que siempre caen en una marca, y convertir a pesos solo al
+imprimir con `Intl.NumberFormat` (`currency: "MXN"`).
 
 **¿Por qué un emoji cuenta como dos?** Porque `length` cuenta casillas de 16 bits, y el 👍 no cabe
 en una: es un par subrogado. `"ok 👍👍👍".length` es 9. Si el límite es para personas, cuenta con
@@ -612,7 +617,7 @@ en una: es un par subrogado. `"ok 👍👍👍".length` es 9. Si el límite es p
 
 **¿Por qué la cita sale un día antes, solo en México?** `"2026-10-14"` se interpreta como
 **medianoche UTC**. Para un usuario en México (UTC−6), esa marca son las 18:00 del día **13**.
-`toLocaleDateString()` imprime la etiqueta en la zona del entorno, así que muestra el 13. En tu
+`toLocaleDateString()` imprime la lectura en la zona del entorno, así que muestra el 13. En tu
 máquina en España (UTC+2) se veía el 14 y nadie lo notó. Esta pregunta reproduce el bug con las
 dos zonas a la vez:
 
@@ -622,7 +627,7 @@ La raíz es que una cita es una **fecha de calendario**, no un instante: trátal
 todo en UTC, también al formatear (`timeZone: "UTC"`).
 
 **¿Cómo mostrarla sin hydration mismatch?** Con locale y zona explícitos en el formateador, para
-que el servidor y el navegador impriman la misma etiqueta; o formateando solo en el cliente.
+que el servidor y el navegador impriman la misma lectura; o formateando solo en el cliente.
 
 ---
 
@@ -648,12 +653,13 @@ Cuando veas `0.30000000000000004`, un emoji que cuenta doble o una fecha que ret
 no es magia: es la distancia entre lo que se guarda y lo que se ve. Sabes que un string es una
 cinta de casillas UTF-16 que no se puede reescribir, que un `number` es una marca en una regla con
 huecos que se agrandan (y por qué los IDs grandes viajan como string), y que un `Date` es una sola
-marca en la regla del tiempo cuya etiqueta depende de quién la lee.
+marca en la regla del tiempo cuya lectura depende de quién la lee.
 
 Sabes por qué todo eso es así: tres decisiones de 1995 que la web no deja deshacer. Y sabes
 distinguir un instante de una fecha de calendario, que es la pregunta que evita casi todos los bugs
 de zonas horarias.
 
 Hasta ahora has trabajado con valores sueltos: una casilla, una marca. La siguiente lección los
-agrupa en estructuras (objetos y arrays) y los manda por la red como JSON, donde ya viste el primer
-aviso: lo que viaja como texto y lo que llega a tu código no siempre es lo mismo.
+agrupa en estructuras, «Objetos, arrays y JSON», y los manda por la red como JSON. Ya viste el
+primer aviso con el ID que `JSON.parse` cambió en silencio: lo que viaja como texto y lo que llega
+a tu código no siempre es lo mismo.

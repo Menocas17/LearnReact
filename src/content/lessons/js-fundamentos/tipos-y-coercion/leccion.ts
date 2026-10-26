@@ -38,6 +38,8 @@ export const tiposYCoercion: LessonDef = {
     { title: "MDN: Truthy", url: "https://developer.mozilla.org/es/docs/Glossary/Truthy" },
     { title: "MDN: Falsy", url: "https://developer.mozilla.org/en-US/docs/Glossary/Falsy" },
     { title: "MDN: Number.isNaN()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/Number/isNaN" },
+    { title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020)", url: "https://dl.acm.org/doi/10.1145/3386327" },
+    { title: "Chrome for Developers: #SmooshGate FAQ", url: "https://developer.chrome.com/blog/smooshgate" },
     { title: "react.dev: useState (comparación con Object.is)", url: "https://es.react.dev/reference/react/useState" },
   ],
   reviewed: { date: "2026-10-14", versions: { node: "22", react: "19.3" } },

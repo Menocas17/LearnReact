@@ -32,6 +32,8 @@ export const stringsNumerosFechas: LessonDef = {
     { title: "MDN: Date", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/Date" },
     { title: "MDN: Intl", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/Intl" },
     { title: "MDN: Temporal", url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Temporal" },
+    { title: "Oracle: java.util.Date (métodos obsoletos desde JDK 1.1)", url: "https://docs.oracle.com/javase/8/docs/api/java/util/Date.html" },
+    { title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020), §3", url: "https://dl.acm.org/doi/10.1145/3386327" },
     { title: "Next.js: How to prevent flash before hydration", url: "https://nextjs.org/docs/app/guides/preventing-flash-before-hydration" },
   ],
   reviewed: { date: "2026-10-14", versions: { node: "22", next: "16.4" } },

@@ -52,7 +52,10 @@ En Java, `a && b` y `a || b` solo aceptan booleanos y siempre producen un boolea
 
 En JavaScript no. `a || b` y `a && b` devuelven **uno de los dos operandos, tal cual**, sin
 convertirlo a booleano. No es una rareza aislada: el `or` de Python y el `||` de Perl o de Ruby
-hacen lo mismo.
+hacen lo mismo. En JavaScript no fue un accidente: mientras se escribía el primer estándar
+(ECMAScript 1, 1997) se discutió si debían devolver un operando (el "estilo Perl") o un booleano
+(el "estilo Java"), porque los primeros motores no coincidían, y se eligió el estilo Perl para
+todos los casos.
 
 Por eso, durante años, la forma estándar de poner un valor por defecto fue
 `x = x || valorPorDefecto`, que falla en silencio con `0`, `""` o `false`: el bug del timeout. ES2015 lo
@@ -88,8 +91,8 @@ decide cuál sigue por la vía principal. No fabrica nada ni repinta el vagón: 
 de los que entraron, **tal cual**.
 Un semáforo te da una luz; una aguja te da un vagón.
 
-La aguja de `||` y la de `&&` inspeccionan el primer vagón con la misma prueba de la lección
-anterior: ¿es truthy o falsy? Los falsy son `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined`
+La aguja de `||` y la de `&&` inspeccionan el primer vagón con la prueba del torniquete de la
+lección anterior: ¿es truthy o falsy? Los falsy son `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined`
 y `NaN`. Todo lo demás es truthy, incluidos `[]`, `{}` y `"0"`.
 
 - `a || b`: si `a` es truthy, sigue `a`; si no, sigue `b`.
@@ -174,7 +177,7 @@ valor de `v`: `0`, `""`, `false`, `null`, `NaN` y `3`?
 
 <Respuesta>
 
-Con `0`, `<p>0</p>`; con `NaN`, `<p>NaN</p>` (y, en desarrollo, un aviso); con `3`,
+Con `0`, `<p>0</p>`; con `NaN`, `<p>NaN</p>`; con `3`,
 `<p><b>nuevo</b></p>`; con `""`, `false` y `null`, un `<p></p>` vacío.
 
 React no pinta `false`, `null` ni `undefined`, y `""` es un texto vacío, invisible. Los
@@ -593,11 +596,11 @@ prueba la red completa: guard clauses, un `switch` con casos agrupados y `for...
 Si alguien pregunta por qué aparece un `0` en pantalla, ya no respondes "cosa de React": `&&` y
 `||` no encienden luces, mueven agujas, y el vagón que sale es uno de los que entraron. Sabes
 que la derecha solo se evalúa si la aguja la elige, qué hueco llenaron `??` y `?.` en ES2020,
-por qué `??=` no es la asignación larga y por qué mezclar `??` con `||` ni compila. Y en la red,
+por qué `??=` no es la asignación larga y por qué mezclar `??` con `||` ni siquiera se parsea. Y en la red,
 que `switch` compara con `===` sin topes entre `case`, y que `for...in` lee letreros mientras
 `for...of` recorre vagones.
 
 Quedan dos cabos sueltos: viste que todos los `case` comparten un bloque y que dos `const` iguales
-chocan, y que un parámetro por defecto solo se activa con `undefined`. Las dos cosas tienen que
-ver con **dónde vive una variable y cuándo existe**: `let`, `const`, el scope de bloque y las
-funciones son la siguiente lección.
+chocan, y que un parámetro por defecto solo se activa con `undefined`. El primero tiene que ver
+con **dónde vive una variable** (el alcance de bloque de `let` y `const`); el segundo, con **cómo
+entra un valor en una función**. Las dos cosas son la siguiente lección: «Variables y funciones».

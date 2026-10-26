@@ -25,6 +25,8 @@ export const cortocircuitoYControl: LessonDef = {
     { title: "MDN: for...of", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Statements/for...of" },
     { title: "MDN: for...in", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Statements/for...in" },
     { title: "MDN: label", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Statements/label" },
+    { title: "TC39: propuesta Optional Chaining (sintaxis ?. y por qué no ?[ )", url: "https://github.com/tc39/proposal-optional-chaining" },
+    { title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020), §9", url: "https://dl.acm.org/doi/10.1145/3386327" },
     { title: "react.dev: Renderizado condicional", url: "https://es.react.dev/learn/conditional-rendering" },
   ],
   reviewed: { date: "2026-10-14", versions: { node: "22", react: "19.3" } },
