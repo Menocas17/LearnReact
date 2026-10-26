@@ -8,9 +8,9 @@ export const objetosArraysJson: LessonDef = {
   slug: "objetos-arrays-json",
   title: "Objetos, arrays y JSON",
   summary:
-    "Por qué createdAt.getTime() explota con datos de una API y localStorage guarda \"[object Object]\": acceso a propiedades, arrays que mutan y lo que JSON pierde por el camino.",
+    "Un ticket con tres fallos (una fecha que llega como string, un carrito guardado como \"[object Object]\" y un sort que React no ve) para entender objetos y arrays como cajas con etiquetas y JSON como la carta en la que viajan.",
   concepts: ["js.objetos", "js.arrays", "js.json"],
-  minutes: 35,
+  minutes: 45,
   questions: preguntas,
   exercises: ejercicios,
   videos: [],
