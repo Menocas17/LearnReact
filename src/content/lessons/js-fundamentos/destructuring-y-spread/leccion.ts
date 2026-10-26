@@ -8,9 +8,9 @@ export const destructuringYSpread: LessonDef = {
   slug: "destructuring-y-spread",
   title: "Destructuring y spread",
   summary:
-    "Por qué el className que le pasas a un Button desaparece: destructuring con valores por defecto, rest para separar props y spread, donde el orden decide quién gana.",
+    "Un Button que pierde el className del padre y un Avatar de 0 px: los objetos como cajas que el destructuring abre por rótulo o posición, el spread vuelca (y el último gana) y el rest recoge. Cierra el módulo 2.",
   concepts: ["js.destructuring", "js.spread-rest"],
-  minutes: 35,
+  minutes: 45,
   questions: preguntas,
   exercises: ejercicios,
   videos: [

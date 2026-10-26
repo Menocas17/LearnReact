@@ -1,23 +1,74 @@
-## El bug
+## La clase que desaparece
 
-Tienes un botón reutilizable:
+Tienes un botón reutilizable y un avatar en la librería de componentes del equipo:
 
 ```jsx
 function Button({ variant = "primary", ...props }) {
   return <button {...props} className={"btn btn-" + variant} />;
 }
 
+function Avatar({ size = 40 }) {
+  return <img width={size * 2} height={size * 2} alt="" />;
+}
+
 // En otro sitio:
 <Button className="w-full" onClick={save}>Guardar</Button>
 ```
 
-El botón sale con sus estilos, pero **no ocupa todo el ancho**: el `className="w-full"` del padre ha desaparecido. Si alguien "lo arregla" moviendo `{...props}` al final, pasa lo contrario: ahora el `w-full` está, pero se pierden `btn btn-primary`. Y mientras tanto, en el mismo archivo escribes `const [open, setOpen] = useState(false)` sin pensar qué hace esa línea.
+Llega un ticket:
 
-Todo esto es JavaScript puro: **destructuring**, **rest** y **spread**. Ya los usas a diario; esta lección va a por las reglas exactas que deciden cuándo funcionan y cuándo no.
+> **#774 — "El botón de Guardar no ocupa todo el ancho".** El `className="w-full"` del padre no
+> llega al HTML. Probé a mover `{...props}` al final y ahora el `w-full` sí está, pero el botón
+> perdió sus estilos (`btn btn-primary`). De paso: el `Avatar` sale de 0 px cuando la API manda
+> `size: null`, aunque el componente tiene `size = 40` por defecto.
 
-## Destructuring de objetos
+Y en ese archivo escribes, sin pensarlo, `const [open, setOpen] = useState(false)`. Cuatro
+preguntas:
 
-Extrae propiedades por **nombre** a variables:
+1. ¿Por qué desaparece `w-full`, y por qué mover `{...props}` hace desaparecer la otra clase?
+2. ¿Por qué `size: null` no activa el `size = 40`?
+3. ¿Qué hace exactamente la firma `({ variant = "primary", ...props })`, y cómo se arregla el
+   botón para conservar **las dos** clases?
+4. ¿Por qué `useState` devuelve un array y no un objeto?
+
+Todo es JavaScript puro: **destructuring**, **rest** y **spread**, y sus reglas exactas.
+
+---
+
+## Tres puntos que llegaron en dos tandas
+
+Antes de 2015, sacar tres propiedades de un objeto eran tres líneas (`var name = user.name;` …)
+y pasar un array como argumentos sueltos se hacía
+con `Math.max.apply(null, nums)`. ECMAScript 2015 (ES6), la misma edición que trajo `let`,
+`const` y las arrows, añadió el **destructuring** (de objetos y de arrays), el **spread** en
+arrays y llamadas y los **parámetros rest**. También añadió `Object.assign` para copiar
+propiedades de un objeto a otro.
+
+Los tres puntos **en objetos** (`{ ...obj }` y `const { a, ...rest } = obj`) llegaron más tarde,
+en ECMAScript 2018. React no esperó: JSX ya aceptaba `{...props}` como atributo, y las
+herramientas lo traducían a algo equivalente a `Object.assign`. Por eso tantos componentes
+mezclan las dos cosas y parecen una sola: el `{...props}` de JSX y el `...` del objeto literal
+siguen la misma regla, y es la que explica el ticket.
+
+---
+
+## Cajas en la mesa
+
+En la lección de variables y funciones la imagen era una **mesa de trabajo**: los valores están
+sobre la mesa y las variables son **etiquetas** atadas con un hilo a un valor. Ahora miramos
+dentro de dos valores concretos:
+
+- Un **objeto** es una **caja con compartimentos rotulados**: cada clave es un rótulo y cada
+  compartimento guarda un valor.
+- Un **array** es una **fila de compartimentos numerados**: no tienen rótulo, solo posición.
+
+Las tres sintaxis de esta lección son tres formas de trabajar con esas cajas:
+
+- **Destructuring**: atar etiquetas nuevas a lo que hay en ciertos compartimentos.
+- **Spread**: volcar el contenido de una caja en otra **nueva**.
+- **Rest**: meter "todo lo que queda" en una caja nueva.
+
+### Primera capa: sacar por rótulo
 
 ```js
 const user = { id: 7, name: "Ana", address: { city: "Lima" } };
@@ -26,29 +77,102 @@ const { name, id: userId, role = "user" } = user;
 // name = "Ana", userId = 7 (renombrado), role = "user" (por defecto)
 ```
 
-- `id: userId` se lee "la propiedad `id`, guárdala en `userId`". No existe ninguna variable `id`.
-- `role = "user"` es un valor por defecto.
+Cada pieza dice "abre el compartimento con este rótulo y ata una etiqueta a lo que haya":
+
+- `name` usa el mismo nombre para el rótulo y para la etiqueta.
+- `id: userId` se lee "el compartimento `id`, átale la etiqueta `userId`". **No existe ninguna
+  variable `id`**: a la izquierda de los dos puntos va el rótulo; a la derecha, la etiqueta.
+- `role = "user"` es un **repuesto**, como el de los parámetros: se usa si el compartimento está
+  vacío.
 - Se pueden combinar: `{ id: userId = 0 }`.
 
-### Los valores por defecto solo saltan con `undefined`
+### Segunda capa: el repuesto solo entra con `undefined`
 
-Esta es la trampa principal. El valor por defecto se usa cuando la propiedad no existe **o vale exactamente `undefined`**. `null`, `0`, `""` y `false` son valores reales y se respetan.
+Esta es la trampa principal. "Vacío" significa que el compartimento **no existe o contiene
+exactamente `undefined`**. `null`, `0`, `""` y `false` son valores reales: hay algo en el
+compartimento, y se respeta.
+
+<AntesDeSeguir>
+
+El `Avatar` del ticket, sin JSX. ¿Qué imprime?
+
+```js
+function Avatar({ size = 40 }) {
+  return size * 2;
+}
+console.log(Avatar({ size: null }), Avatar({}), Avatar({ size: undefined }), Avatar({ size: 0 }));
+```
+
+<Respuesta>
+
+```
+0 80 80 0
+```
+
+Con `size: null` el compartimento tiene algo (`null`), el repuesto no entra y `null * 2` se
+convierte a número: `0`. Solo la clave ausente y la `undefined` explícita activan el `40`. Si
+necesitas tratar `null` como ausente, no lo resuelvas en la firma: usa `??` en el cuerpo,
+`const s = size ?? 40`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Esta pregunta pone a prueba la misma regla con `null` frente a `undefined`, más el `= {}` de un
+parámetro que no llega:
 
 <Pregunta id="destructuring-default-null" />
 
-En React esto aparece cuando una API devuelve `null` para "sin valor": `function Avatar({ size = 40 })` recibirá `size === null` si el padre pasa `size={null}`, y tu cálculo `size * 2` dará `0`. Si necesitas tratar `null` como ausente, usa `??` en el cuerpo: `const s = size ?? 40`.
+Un segundo detalle del repuesto: **se fabrica solo si hace falta**.
 
-Otro detalle: la expresión del valor por defecto se evalúa **solo si hace falta**, así que `{ onClose = () => {} }` no crea una función nueva cuando el padre ya pasó una.
+<AntesDeSeguir>
 
-### Destructuring anidado
+¿Cuántas veces se llama a `nuevaFuncion`?
+
+```js
+let creadas = 0;
+const nuevaFuncion = () => {
+  creadas++;
+  return () => {};
+};
+function Modal({ onClose = nuevaFuncion() }) {
+  return typeof onClose;
+}
+Modal({ onClose: () => {} });
+Modal({ onClose: () => {} });
+Modal({});
+console.log(creadas);
+```
+
+<Respuesta>
+
+```
+1
+```
+
+La expresión del valor por defecto solo se evalúa cuando el compartimento está vacío. Por eso
+`{ onClose = () => {} }` en un componente no crea una función nueva cuando el padre ya pasó una.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### Tercera capa: cajas dentro de cajas
+
+Un compartimento puede contener otra caja (en realidad, un hilo atado a ella). El destructuring
+anidado abre las dos de una vez:
 
 ```js
 const { address: { city } } = user; // city = "Lima"
 ```
 
-Ojo: aquí `address` **no** es una variable, es solo el camino. Si quieres ambas, escribe `const { address, address: { city } } = user`.
+Ojo: aquí `address` **no** es una variable, es solo el camino. Si quieres ambas, escribe
+`const { address, address: { city } } = user`.
 
-El problema es que el destructuring anidado accede a la propiedad del nivel intermedio sin preguntar. Si ese nivel es `undefined` o `null`, lanza `TypeError`. Un `= {}` en el nivel intermedio protege de `undefined`… pero no de `null`:
+El problema es que el destructuring anidado abre la caja intermedia **sin preguntar**. Si ese
+compartimento contiene `undefined` o `null`, no hay caja que abrir y lanza `TypeError`. Un `= {}`
+en el nivel intermedio pone una caja vacía de repuesto… pero, como todo repuesto, solo entra con
+`undefined`. Esta pregunta pone a prueba qué pasa cuando la API manda `null`:
 
 <Pregunta id="destructuring-anidado-null" />
 
@@ -56,9 +180,12 @@ El problema es que el destructuring anidado accede a la propiedad del nivel inte
 Con datos que vienen de una API (donde `null` es habitual), el destructuring anidado es frágil. Extrae el nivel intermedio y usa encadenamiento opcional: `const city = data?.user?.address?.city ?? "—"`.
 </Callout>
 
-### Destructuring en parámetros: así son las props
+### Cuarta capa: la caja llega por la ranura
 
-La firma `function Card({ title, onClose = () => {} })` no es sintaxis de React: es destructuring del **primer parámetro**. React llama a `Card(props)` con un objeto y JavaScript lo desestructura antes de ejecutar el cuerpo.
+En la lección anterior viste que una función es una máquina con ranuras de entrada. La firma
+`function Card({ title, onClose = () => {} })` no es sintaxis de React: es destructuring del
+**primer parámetro**. React llama a `Card(props)` con una caja, y JavaScript la abre antes de
+ejecutar el cuerpo.
 
 ```jsx
 function Card({ title, onClose = () => {} }) {
@@ -71,25 +198,52 @@ function Card({ title, onClose = () => {} }) {
 }
 ```
 
-React siempre pasa un objeto de props (aunque esté vacío), así que en componentes no hace falta más. Pero en funciones normales, hooks propios o utilidades que reciben un objeto de opciones, olvidarlo rompe la llamada sin argumentos:
+React siempre pasa un objeto de props (aunque esté vacío), así que en componentes no hace falta
+más. Pero en funciones normales, hooks propios o utilidades que reciben un objeto de opciones, a
+veces no llega ninguna caja.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
 
 ```js
-function connect({ retries = 3 }) {}
-connect(); // TypeError: Cannot read properties of undefined (reading 'retries')
-
-function connectSafe({ retries = 3 } = {}) {}
-connectSafe(); // bien: el parámetro vale {} y luego retries = 3
+function connect({ retries = 3 }) {
+  return retries;
+}
+function connectSafe({ retries = 3 } = {}) {
+  return retries;
+}
+try {
+  connect();
+} catch (e) {
+  console.log(e.name);
+}
+console.log(connectSafe(), connectSafe({ retries: 5 }));
 ```
 
-Son **dos** valores por defecto distintos: `= {}` es el del parámetro entero; `retries = 3` es el de la propiedad.
+<Respuesta>
+
+```
+TypeError
+3 5
+```
+
+`connect()` intenta abrir una caja que no existe: `Cannot read properties of undefined (reading 'retries')`.
+En `connectSafe` hay **dos** repuestos distintos: `= {}` es el del parámetro entero
+(una caja vacía si no llega ninguna) y `retries = 3` es el del compartimento.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 <Callout type="nota">
 Asignar con destructuring a variables ya declaradas exige paréntesis: `({ a, b } = obj);`. Sin ellos, la `{` al principio de la línea se interpreta como un bloque y da `SyntaxError`.
 </Callout>
 
-## Destructuring de arrays y `useState`
+### Quinta capa: sacar por posición
 
-En arrays se extrae por **posición**, así que los nombres los eliges tú:
+En la fila de compartimentos numerados no hay rótulos, así que se saca por **posición** y los
+nombres de las etiquetas los eliges tú:
 
 ```js
 const [first, , third = 0] = [10, 20];   // first = 10, third = 0 (posición 2 vacía)
@@ -100,15 +254,26 @@ let b = 2;
 
 - Las comas sin nombre (`, ,`) saltan posiciones.
 - Funciona con cualquier iterable: `const [x, y] = "hi"` o `const [first] = new Set(lista)`.
-- Si una línea empieza por `[` y la anterior no termina en `;`, JavaScript las une (`b = 2[a, b] = …`). En el intercambio, asegúrate de que la línea anterior termina en punto y coma.
+- Si una línea empieza por `[` y la anterior no termina en `;`, JavaScript las une
+  (`b = 2[a, b] = …`). En el intercambio, asegúrate de que la línea anterior termina en punto y
+  coma.
 
-Por esto `useState` devuelve un **array** y no un objeto: con arrays puedes llamar a las variables como quieras (`[open, setOpen]`, `[query, setQuery]`) sin renombrar. `const [value, setValue] = useState(0)` es literalmente "dame la posición 0 y la posición 1 del array que devuelve `useState`". Y como es una copia del valor en una `const` nueva, llamar al setter no la cambia:
+Por esto `useState` devuelve un **array** y no un objeto: con posiciones puedes llamar a las
+etiquetas como quieras (`[open, setOpen]`, `[query, setQuery]`) sin renombrar. Con un objeto
+tendrías que escribir algo como `{ value: open, setValue: setOpen }` cada vez.
+`const [value, setValue] = useState(0)` es literalmente "ata una etiqueta a la posición 0 y otra
+a la posición 1 del array que devuelve `useState`". Y como es una `const` nueva atada a ese
+valor, llamar al setter no la cambia. Esta pregunta lo comprueba con un `useState` de juguete, y
+de paso los huecos y los repuestos por posición:
 
 <Pregunta id="destructuring-usestate-copia" />
 
-## Spread: expandir
+---
 
-Los `...` delante de un valor lo **expanden** en el sitio donde aparecen. Hay tres contextos:
+## Spread: volcar en una caja nueva
+
+Los `...` delante de un valor lo **expanden** en el sitio donde aparecen: vuelcan su contenido en
+la caja (o la llamada) que estás construyendo. Hay tres contextos:
 
 ```js
 const nums = [1, 2, 3];
@@ -122,50 +287,125 @@ const copy = { ...base, c: 3 };          // en objetos: { a: 1, b: 2, c: 3 }
 Math.max(...nums);                       // en llamadas: Math.max(1, 2, 3)
 ```
 
-Aunque se escriban igual, el spread de **arrays y llamadas** usa el protocolo de iteración (el mismo que `for...of`), mientras que el de **objetos** copia las propiedades propias enumerables. Esa diferencia explica la siguiente trampa.
+Aunque se escriban igual, no vuelcan de la misma forma. El spread de **arrays y llamadas** usa
+el protocolo de iteración (el mismo que `for...of`): saca los elementos uno a uno. El de
+**objetos** copia los compartimentos **propios enumerables** de la caja.
 
-### Orden: la última clave gana
+### El orden: el último en llegar gana
 
-Un objeto literal se construye de izquierda a derecha. Si una clave aparece dos veces (sea escrita a mano o traída por spread), **el último valor pisa al anterior**:
+Un objeto literal se construye de izquierda a derecha, compartimento a compartimento. Cada rótulo
+tiene **un solo** compartimento: si una clave aparece dos veces (escrita a mano o traída por
+spread), **el último valor pisa al anterior**.
 
 ```js
 const config = { ...defaults, ...options };   // options gana: lo habitual
 const config2 = { ...options, ...defaults };  // defaults gana: casi siempre un bug
 ```
 
-Eso es exactamente lo que pasaba con el `Button`. JSX convierte `<button {...props} className={…} />` en un objeto de props donde se aplica la misma regla:
+Eso es exactamente lo que pasa con el `Button`. JSX convierte `<button {...props} className={…} />`
+en un objeto de props donde se aplica la misma regla. Esta pregunta pone a prueba las dos
+versiones del ticket, escritas como funciones que devuelven las props finales:
 
 <Pregunta id="spread-orden-props" />
 
-La solución no es elegir un orden, sino **extraer** `className` y combinarlo:
+Volcar no distingue valores "con sentido": copia compartimentos.
 
-```jsx
-function Button({ variant = "primary", className = "", ...props }) {
-  return <button {...props} className={`btn btn-${variant} ${className}`.trim()} />;
-}
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const defaults = { size: "md", color: "azul" };
+const options = { size: undefined };
+const config = { ...defaults, ...options };
+console.log(config.size, "size" in config, config.color);
 ```
 
-<Callout type="cuidado">
-`{ ...defaults, ...options }` tiene otra trampa: si `options` trae una clave con valor `undefined` (por ejemplo, de un formulario o de `{ size: props.size }`), **esa `undefined` también se copia** y pisa el valor por defecto. El spread copia claves, no "valores con sentido". El primer ejercicio va de esto.
-</Callout>
+<Respuesta>
 
-### `null` y `undefined`: objeto sí, array no
+```
+undefined true azul
+```
+
+`options` tiene un compartimento `size`, aunque contenga `undefined`, y se vuelca encima del
+`"md"`. Pasa con datos de formularios o con objetos como `{ size: props.size }`. El primer ejercicio va de esto.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### Volcar `null`: en objetos sí, en arrays no
+
+¿Qué pasa si lo que intentas volcar no es una caja? Esta pregunta pone a prueba `null` y
+`undefined` en un objeto y en un array:
 
 <Pregunta id="spread-null-objeto-array" />
 
-Esto hace que `{ ...(cond && { extra: 1 }) }` funcione (si `cond` es `false`, se expande un booleano, que no tiene propiedades propias, y no pasa nada), mientras que `[...maybeList]` revienta cuando `maybeList` es `null`. En arrays, protege con `[...(maybeList ?? [])]`.
+Volcar `null` en un objeto es volcar una caja vacía; en un array hay que **recorrerlo**, y `null`
+no se puede recorrer. Esto hace que `{ ...(cond && { extra: 1 }) }` funcione (si `cond` es
+`false`, se expande un booleano, que no tiene propiedades propias, y no pasa nada), mientras que
+`[...maybeList]` revienta cuando `maybeList` es `null`. En arrays, protege con
+`[...(maybeList ?? [])]`.
 
-### Spread es una copia superficial
+<Profundiza titulo="por qué se comportan distinto según la especificación">
 
-`{ ...obj }` y `[...arr]` crean un objeto o array **nuevo** en el primer nivel, pero los objetos anidados se comparten por referencia. Lo verás a fondo en **Valores y referencias** (módulo 3): es la razón por la que actualizar estado anidado exige un spread por cada nivel que cambias, `{ ...user, address: { ...user.address, city } }`.
+En la especificación de ECMAScript, el spread de arrays y de argumentos pide un iterador al valor
+(su método `Symbol.iterator`): si no lo tiene, como `null`, `undefined` o un objeto normal, lanza
+`TypeError`. El spread y el rest de objetos usan otra operación interna, `CopyDataProperties`,
+que empieza comprobando si el origen es `null` o `undefined` y, si lo es, no copia nada.
 
-### Spread en llamadas y arrays enormes
+</Profundiza>
 
-`Math.max(...arr)` pasa cada elemento como un argumento separado, y los motores tienen un límite de argumentos por llamada. Con arrays de cientos de miles de elementos puede lanzar `RangeError` (el límite exacto depende del motor). Para datos grandes usa un bucle o `arr.reduce((max, n) => Math.max(max, n), -Infinity)`. Además, `Math.max()` sin argumentos devuelve `-Infinity`, así que `Math.max(...[])` también.
+### El volcado es superficial
 
-## Rest: recoger lo que sobra
+Un compartimento que contiene otra caja en realidad tiene un **hilo** atado a ella. Al volcar, se
+copia el hilo, no la caja.
 
-Los mismos `...` en una posición donde se **declara** (destructuring o parámetros) hacen lo contrario: recogen.
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const user = { name: "Ana", address: { city: "Lima" } };
+const copia = { ...user };
+copia.name = "Luis";
+copia.address.city = "Quito";
+console.log(user.name, user.address.city);
+console.log(copia.address === user.address);
+```
+
+<Respuesta>
+
+```
+Ana Quito
+true
+```
+
+`{ ...user }` crea una caja **nueva** en el primer nivel (por eso `name` no cambia en `user`),
+pero las dos cajas tienen un hilo a la **misma** caja `address`. `[...arr]` funciona igual.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Lo verás a fondo en **Valores y referencias** (módulo 3); es la razón por la que actualizar estado
+anidado exige un spread por cada nivel que cambias,
+`{ ...user, address: { ...user.address, city } }`.
+
+### Volcar en una llamada: arrays enormes
+
+`Math.max(...arr)` pasa cada elemento como un argumento separado, y los motores tienen un límite
+de argumentos por llamada. Con arrays de cientos de miles de elementos puede lanzar `RangeError`
+(el límite exacto depende del motor). Para datos grandes usa un bucle o
+`arr.reduce((max, n) => Math.max(max, n), -Infinity)`. Además, `Math.max()` sin argumentos
+devuelve `-Infinity`, así que `Math.max(...[])` también.
+
+---
+
+## Rest: lo que queda, en otra caja
+
+Los mismos `...` en una posición donde se **declara** (destructuring o parámetros) hacen lo
+contrario: en vez de volcar, **recogen** lo que no sacaste en una caja nueva.
 
 ```js
 const { id, onClose, ...rest } = props;   // rest: objeto con el resto de props
@@ -174,10 +414,13 @@ function log(level, ...messages) {}       // messages: array real con los argume
 ```
 
 - El rest va **siempre al final**; `const { ...rest, id } = props` es `SyntaxError`.
-- El rest de objetos copia solo las propiedades propias enumerables y, como el spread, es superficial.
-- Los parámetros rest son un `Array` de verdad (con `map`, `filter`…), a diferencia del viejo `arguments`.
+- El rest de objetos copia solo las propiedades propias enumerables y, como el spread, es
+  superficial.
+- Los parámetros rest son un `Array` de verdad (con `map`, `filter`…), a diferencia del viejo
+  `arguments`.
 
-El patrón de componentes envolventes combina las dos caras: rest para **separar** las props que el componente consume y spread para **pasar** el resto al elemento del DOM.
+El patrón de componentes envolventes combina las dos caras: rest para **separar** las props que el
+componente consume y spread para **pasar** el resto al elemento del DOM.
 
 ```jsx
 function TextField({ label, error, ...inputProps }) {
@@ -191,7 +434,11 @@ function TextField({ label, error, ...inputProps }) {
 }
 ```
 
-Así `label` y `error` no llegan al `<input>` (acabarían como atributos sin sentido en el HTML) y todo lo demás (`value`, `onChange`, `placeholder`, `aria-*`) pasa sin que tengas que enumerarlo.
+Así `label` y `error` no llegan al `<input>` (acabarían como atributos sin sentido en el HTML) y
+todo lo demás (`value`, `onChange`, `placeholder`, `aria-*`) pasa sin que tengas que enumerarlo.
+
+Esta pregunta pone a prueba las dos caras juntas: rest en un destructuring, rest en parámetros y
+spread de arrays vacíos, strings y `Set`:
 
 <Pregunta id="spread-rest-params" />
 
@@ -199,19 +446,90 @@ Así `label` y `error` no llegan al `<input>` (acabarían como atributos sin sen
 `...` expande cuando **lee** un valor (spread) y recoge cuando está en el lado izquierdo de un destructuring o en los parámetros (rest). Rest para separar, spread para combinar, y en un objeto literal siempre gana la última clave.
 </Callout>
 
-## Práctica
+---
+
+## El ticket, resuelto
+
+**¿Por qué desaparece `w-full`, y por qué moverlo lo invierte?** Porque `className` aparece dos
+veces en el mismo objeto de props: una dentro de `{...props}` y otra escrita a mano. Gana la
+última. Con `{...props}` primero gana `btn btn-primary`; con `{...props}` al final gana `w-full`.
+Ningún orden conserva las dos: un rótulo, un compartimento.
+
+**¿Por qué `size: null` no activa `size = 40`?** Porque el repuesto solo entra con `undefined`.
+`null` es un valor real y `null * 2` vale `0`. El arreglo: `size ?? 40` en el cuerpo.
+
+**¿Qué hace la firma, y cómo se arregla?** `({ variant = "primary", ...props })` abre la caja de
+props, saca `variant` (con repuesto) y mete todo lo demás, `className` incluido, en una caja
+nueva. La solución no es elegir un orden, sino **sacar** `className` también y combinarlo:
+
+```jsx
+function Button({ variant = "primary", className = "", ...props }) {
+  return <button {...props} className={`btn btn-${variant} ${className}`.trim()} />;
+}
+```
+
+<AntesDeSeguir>
+
+La parte que calcula la clase, sin JSX. ¿Qué imprime?
+
+```js
+function buttonClass({ variant = "primary", className = "" } = {}) {
+  return `btn btn-${variant} ${className}`.trim();
+}
+console.log(buttonClass({ className: "w-full" }));
+console.log("[" + buttonClass({ variant: "danger" }) + "]");
+```
+
+<Respuesta>
+
+```
+btn btn-primary w-full
+[btn btn-danger]
+```
+
+Las dos clases ya no compiten por un compartimento: se concatenan. Sin `className` del padre,
+el repuesto `""` deja un espacio al final que `trim` quita.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+**¿Por qué `useState` devuelve un array?** Para que elijas los nombres por posición sin
+renombrar. `setOpen` no cambia `open`: pide un render nuevo, con otra constante.
+
+---
+
+## Práctica: la librería de componentes
+
+El equipo aprovecha el ticket para revisar cómo la librería combina su configuración por defecto
+con la de cada pantalla: hoy es un `{ ...defaults, ...overrides }`, con los problemas que has
+visto. Este ejercicio pone a prueba el orden del spread, la diferencia entre
+`undefined` y `null`, el volcado superficial y el spread de `null`:
 
 <Ejercicio id="spread-merge-config" />
 
+Después, para que ningún componente vuelva a perder un `className`, toca escribir los helpers que
+separan props. Este ejercicio pone a prueba el rest con
+claves calculadas, el `= {}` en la firma y combinar clases en vez de pisarlas:
+
 <Ejercicio id="destructuring-split-props" />
 
-## Resumen
+---
 
-- El destructuring de objetos extrae por **nombre** (con `nombre: otro` para renombrar); el de arrays, por **posición**, por eso `useState` devuelve un array.
-- Los valores por defecto solo se aplican con `undefined`, nunca con `null`.
-- El destructuring anidado lanza `TypeError` si el nivel intermedio es `null` o `undefined`; `= {}` solo cubre `undefined`.
-- En parámetros, `({ a = 1 } = {})` tiene dos defaults: el del objeto entero y el de cada propiedad.
-- Spread expande arrays, iterables y objetos; en objetos **gana la última clave**, incluida una `undefined`.
-- `{ ...null }` no hace nada; `[...null]` lanza `TypeError`.
-- Spread y rest hacen copias **superficiales**.
-- Rest recoge lo que sobra: `const { id, ...rest } = props` y `function f(...args)`; va siempre al final.
+## Lo que ahora puedes explicar
+
+Cuando veas `function Button({ variant = "primary", ...props })` ya no es sintaxis de React: es
+una caja que se abre, un repuesto que solo entra con `undefined` y el resto en una caja nueva.
+Sabes que el destructuring anidado abre cajas sin preguntar, que el spread de objetos copia
+compartimentos (también los `undefined`) y gana el último, que en arrays hay que poder recorrer
+lo que vuelcas y que toda copia con `...` es superficial.
+
+Con esto cierras el módulo de fundamentos: de los tipos y la coerción a los métodos de array,
+y ahora la sintaxis que une todo eso en cada componente de React. El
+proyecto del módulo, una serie de funciones utilitarias con tests, es el sitio para usarlo todo
+junto.
+
+El módulo 3, **JavaScript profundo**, abre con los **closures**: por qué el setter de `useState`
+de juguete pudo cambiar su `value` interno aunque tu `count` no se moviera. Y en **Valores y
+referencias** volverás a los hilos de esta lección para ver a fondo las copias superficiales y
+profundas.
