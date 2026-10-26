@@ -1,35 +1,92 @@
 ## La clase que React no deja jubilar
 
-Escribes componentes con funciones y hooks desde hace años. Pero si quieres que un error de render no tumbe toda la página, React 19 te sigue pidiendo esto:
+Escribes componentes con funciones y hooks desde hace años. Pero hay un sitio donde React 19 te
+sigue pidiendo una clase: los **error boundaries**, los componentes que evitan que un error de
+render tumbe toda la página. No hay hook equivalente; librerías como react-error-boundary o
+`catchError` de Next.js te dan uno ya hecho, pero por dentro hay una clase. Y la de tu equipo
+tiene un ticket:
+
+> **#815 — "Un usuario inexistente muestra 'Algo salió mal'".** Al abrir `/usuarios/999` debería
+> salir "Este usuario no existe". Sale el fallback genérico, y en el log el error aparece como
+> `Error: No encontrado: /api/usuarios/999`.
 
 ```jsx
+class NotFoundError extends Error {
+  constructor(url) {
+    super("No encontrado: " + url);
+    this.url = url;
+  }
+}
+
 class ErrorBoundary extends Component {
-  state = { hasError: false };
+  state = { error: null };
 
   static getDerivedStateFromError(error) {
-    return { hasError: true };
+    return { error };
   }
 
   componentDidCatch(error, info) {
-    logError(error, info.componentStack);
+    logError(error.name + ": " + error.message, info.componentStack);
   }
 
   render() {
-    if (this.state.hasError) return this.props.fallback;
-    return this.props.children;
+    const { error } = this.state;
+    if (!error) return this.props.children;
+    if (error.name === "NotFoundError") return <UsuarioNoExiste />;
+    return this.props.fallback;
   }
 }
 ```
 
-No hay hook equivalente: en React, un error boundary **tiene que ser una clase** (librerías como react-error-boundary o `catchError` de Next.js te dan una ya hecha, pero por dentro hay una clase como esta). Y en ese fragmento hay cinco cosas de JavaScript que conviene entender de verdad: `class`, `extends`, un campo (`state = …`), un método `static` y métodos normales que usan `this`. Lo mismo te vas a encontrar en código legacy con class components y cada vez que quieras errores con tipo (`class NotFoundError extends Error`).
+En la revisión alguien pregunta por qué se comparan strings en vez de usar `instanceof`. El
+autor responde: "En JavaScript las clases no son de verdad; prefiero no fiarme de `instanceof`".
+Cuatro preguntas:
 
-La sorpresa es que JavaScript **no tiene clases** en el sentido de Java o C#. `class` es una sintaxis cómoda sobre un mecanismo más simple: los **prototipos**. Si entiendes los prototipos, las clases dejan de tener misterio.
+1. Si lanzaste un `NotFoundError`, ¿por qué `error.name` dice `"Error"`? ¿De dónde sale ese valor?
+2. ¿Qué comprueba realmente `instanceof`? ¿Es fiable?
+3. Tu clase no define `props` ni `setState`, y aun así `this.props` funciona y `this.setState`
+   existiría. ¿De dónde salen?
+4. ¿Por qué `getDerivedStateFromError` lleva `static`, `state = …` no y `render` tampoco? ¿Dónde
+   acaba cada cosa?
 
-## Cada objeto tiene un enlace oculto
+---
 
-Todo objeto tiene un enlace interno a otro objeto (o a `null`). La especificación lo llama **`[[Prototype]]`**. No es una propiedad normal: se lee con `Object.getPrototypeOf(obj)`.
+## Un lenguaje sin moldes
 
-La forma más directa de crear un objeto con un prototipo concreto es `Object.create(proto)`:
+En Java o C#, primero escribes una **clase**, un molde, y después fabricas objetos con él. El
+molde existe aparte de los objetos, y qué métodos tiene cada objeto lo decide su clase.
+
+Brendan Eich tomó otro camino para el modelo de objetos de JavaScript: el de **Self**, un
+lenguaje experimental creado en los años 80 por David Ungar y Randall Smith. En Self no hay
+clases, solo objetos. Cuando a un objeto le piden algo que no tiene, **delega** en otro objeto.
+Un concepto en vez de dos.
+
+Como viste en la lección de closures, la sintaxis de JavaScript tenía que parecerse a Java. El
+resultado fue un híbrido: debajo, delegación al estilo Self; encima, `new` y funciones
+constructoras con un aire familiar. Durante años, "hacer una clase" significó escribir una
+función y colgar métodos de su `.prototype` a mano.
+
+ES2015 añadió `class`, pero no cambió el modelo: MDN describe las clases como funciones
+especiales construidas sobre prototipos. Lo que trajo fue una sintaxis común y algunas
+protecciones. Los campos (`state = …`), los campos `static` y los miembros privados con `#`
+llegaron más tarde, en ES2022; hasta entonces, la privacidad era una convención (`_saldo`) o un
+closure.
+
+El autor del ticket acierta: JavaScript **no tiene clases** como las de Java. Pero eso no hace
+menos fiable a `instanceof`.
+
+---
+
+## Pregúntale a tu jefe
+
+La imagen de esta lección: **cada objeto es un empleado de una oficina**. Tiene su propia
+**libreta**, con lo que sabe él (sus propiedades), y exactamente **un jefe** al que preguntar lo
+que no sabe. El jefe es otro objeto, con su libreta y su propio jefe, y así hasta el director,
+que no tiene a nadie encima.
+
+La especificación llama a ese enlace **`[[Prototype]]`**. No es una propiedad normal: se lee con
+`Object.getPrototypeOf(obj)`. La forma más directa de contratar a un empleado con un jefe
+concreto es `Object.create(jefe)`:
 
 ```js
 const animal = {
@@ -41,55 +98,102 @@ const animal = {
   },
 };
 
-const rex = Object.create(animal); // objeto vacío cuyo [[Prototype]] es animal
+const rex = Object.create(animal); // libreta vacía, jefe: animal
 rex.name = "Rex";
 
 Object.getPrototypeOf(rex) === animal; // true
-rex.describe(); // "Rex hace ..."
 ```
-
-`rex` no tiene `describe`, y aun así funciona. Eso es la herencia en JavaScript: no se copia nada, se **enlaza**.
-
-## La búsqueda de propiedades
 
 Cuando lees `rex.describe`, el motor hace esto:
 
-1. ¿`rex` tiene una propiedad **propia** llamada `describe`? Si sí, la devuelve.
-2. Si no, va a `Object.getPrototypeOf(rex)` (aquí, `animal`) y repite.
-3. Sigue subiendo hasta que el prototipo es `null`. Si no la encontró, el resultado es `undefined`.
+1. ¿`rex` tiene en su libreta una propiedad **propia** llamada `describe`? Si sí, la devuelve.
+2. Si no, le pregunta a su jefe, `Object.getPrototypeOf(rex)` (aquí, `animal`), y repite.
+3. Sigue subiendo hasta llegar a `null`. Si nadie la tenía, el resultado es `undefined`.
 
 ```text
 rex ──[[Prototype]]──▶ animal ──[[Prototype]]──▶ Object.prototype ──▶ null
  name                   describe, sound           toString, hasOwnProperty…
 ```
 
-A esa lista enlazada se le llama **cadena de prototipos**. Y fíjate en `this`: dentro de `describe`, `this` es `rex` (el objeto a la izquierda del punto), no `animal`. El método se encuentra en el prototipo, pero se ejecuta sobre el objeto original. Por eso un único `describe` sirve para todos.
+A esa lista se le llama **cadena de prototipos**. `Object.prototype` es el director, jefe por
+defecto de los objetos literales. No se copia nada; se **enlaza**.
 
-## Propias vs heredadas
+<AntesDeSeguir>
 
-Una propiedad **propia** está en el objeto; una **heredada** se encuentra subiendo por la cadena. Para distinguirlas:
+`rex` no tiene `describe` en su libreta. ¿Qué imprime?
 
 ```js
-Object.hasOwn(rex, "name"); // true: propia
-Object.hasOwn(rex, "describe"); // false: heredada
-"describe" in rex; // true: in sí recorre la cadena
-Object.keys(rex); // ["name"]: solo propias (y enumerables)
+console.log(rex.describe());
+console.log(animal.describe());
 ```
 
-`Object.hasOwn` es la versión moderna de `obj.hasOwnProperty(key)`: funciona incluso con objetos sin prototipo (`Object.create(null)`) o que tapan `hasOwnProperty`.
+<Respuesta>
+
+```
+Rex hace ...
+undefined hace ...
+```
+
+El jefe le dice a `rex` **cómo** describirse, pero lo hace `rex` con su propia libreta: como
+viste en la lección de `this`, `this` es el objeto antes del punto, aunque la función se haya
+encontrado un piso más arriba. Por eso un único `describe` sirve para todos.
+Llamado sobre `animal`, `this` es `animal`, que no tiene `name`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### Lo que sabes tú y lo que sabe tu jefe
+
+Una propiedad **propia** está en la libreta del objeto; una **heredada** se encuentra
+preguntando hacia arriba. Hay herramientas para cada pregunta.
+
+<AntesDeSeguir>
+
+Con el mismo `rex`, ¿qué imprime?
+
+```js
+console.log(Object.hasOwn(rex, "name"), Object.hasOwn(rex, "describe"));
+console.log("describe" in rex, "toString" in rex);
+console.log(Object.keys(rex).join(","));
+```
+
+<Respuesta>
+
+```
+true false
+true true
+name
+```
+
+`Object.hasOwn` solo mira la libreta; `in` pregunta a toda la cadena, hasta el director, que
+sabe `toString`. `Object.keys` devuelve solo las propias (y enumerables).
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+`Object.hasOwn` es la versión moderna de `obj.hasOwnProperty(key)`, que es un método que el
+objeto tiene que **encontrar** en su cadena: falla con un empleado sin jefe (`Object.create(null)`)
+o con uno que tape `hasOwnProperty`. `Object.hasOwn` funciona siempre.
+
+---
 
 ## Leer sube, escribir no
 
-Esta asimetría es la fuente de casi todas las sorpresas con prototipos:
+Segunda capa, y la fuente de casi todas las sorpresas: **preguntar** sube por la cadena, pero
+**anotar** no. Asignar (`obj.x = …`) escribe en la libreta de `obj`; nunca en la del jefe.
 
-- **Leer** una propiedad recorre la cadena.
-- **Asignar** (`obj.x = …`) crea o cambia una propiedad **propia** de `obj`. Nunca modifica el prototipo. (Excepción: si más arriba en la cadena hay un *setter* para `x`, la asignación lo ejecuta en vez de crear la propiedad; lo verás con `set` en las clases.)
-
-Si asignas una propiedad que ya existía más arriba, la nueva **tapa** a la heredada. Se llama *shadowing*:
+Si anotas algo que el jefe ya sabía, tu nota **tapa** la suya: a partir de ahí respondes tú. Se
+llama *shadowing*. Si la borras con `delete`, vuelve a responder el jefe. Esta pregunta pone a
+prueba esas tres fases:
 
 <Pregunta id="prototipos-shadowing-delete" />
 
-Ahora el caso venenoso: `a.tags.push(…)` no es una asignación a `a.tags`. Es una **lectura** de `a.tags` (que sube por la cadena) seguida de una mutación del array que encontró.
+Ahora el caso venenoso. Imagina que el jefe tiene una pizarra en su despacho.
+`a.tags.push("js")` **no** es anotar `tags` en la libreta de `a`: es preguntar "¿dónde está
+`tags`?" (una lectura, que sube hasta el jefe) y escribir en la pizarra que te señalan, la del
+jefe, que ven todos sus empleados. Esta pregunta mezcla las dos operaciones:
 
 <Pregunta id="prototipos-array-compartido" />
 
@@ -97,36 +201,98 @@ Ahora el caso venenoso: `a.tags.push(…)` no es una asignación a `a.tags`. Es 
 Nunca pongas estado mutable (arrays, objetos) en un prototipo: lo comparten todas las instancias, y un `push` desde una se ve en todas. Los prototipos son para **comportamiento** (métodos); los datos van en cada instancia. Las clases hacen esto bien por defecto, como verás enseguida.
 </Callout>
 
+### La excepción: el jefe que quiere enterarse
+
+Anotar no escribe en tu libreta cuando más arriba en la cadena hay un **setter** para esa
+propiedad. Es como si el jefe hubiera dejado dicho "si alguien quiere anotar
+`nombre`, que me lo pase a mí". La asignación ejecuta el setter en lugar de crear la propiedad.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const perfil = {
+  set nombre(valor) {
+    this._nombre = valor.trim();
+  },
+  get nombre() {
+    return this._nombre;
+  },
+};
+const ana = Object.create(perfil);
+ana.nombre = "  Ana  ";
+console.log(Object.hasOwn(ana, "nombre"), Object.hasOwn(ana, "_nombre"));
+console.log("[" + ana.nombre + "]");
+```
+
+<Respuesta>
+
+```
+false true
+[Ana]
+```
+
+`ana.nombre = …` encontró el setter en `perfil` y lo ejecutó con `this` igual a `ana`. Por eso
+`nombre` no aparece en la libreta de `ana`, pero `_nombre` sí: el setter lo anotó en la libreta
+de quien preguntó, no en la del jefe.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+---
+
 ## Por qué todos los arrays tienen map
 
-Nunca has definido `map` en tus arrays y siempre está ahí. Cuando escribes `[1, 2]`, el motor crea un objeto cuyo `[[Prototype]]` es `Array.prototype`, y ahí viven `map`, `filter`, `push`… una sola vez, compartidos por todos los arrays del programa.
+Nunca has definido `map` en tus arrays y siempre está ahí. Cuando escribes `[1, 2]`, el motor
+contrata un empleado cuyo jefe es `Array.prototype`, y ahí viven `map`, `filter`, `push`… una
+sola vez, compartidos por todos los arrays del programa.
 
 ```text
 [1, 2] ──▶ Array.prototype ──▶ Object.prototype ──▶ null
            map, filter, push…   toString, hasOwnProperty…
 ```
 
-Igual con las funciones (`Function.prototype` tiene `call`, `bind`), los strings (`String.prototype.toUpperCase`) o las promesas (`Promise.prototype.then`).
+Igual con las funciones (`Function.prototype.call`, `bind`), los strings
+(`String.prototype.toUpperCase`) o las promesas (`Promise.prototype.then`).
 
 Aquí aparece una confusión de nombres que conviene aclarar ya:
 
-- **`[[Prototype]]`** es el enlace interno de *cualquier* objeto hacia su prototipo. Se lee con `Object.getPrototypeOf`.
-- **`.prototype`** es una propiedad normal que tienen las *funciones* (constructoras y clases). Es el objeto que se asignará como `[[Prototype]]` a lo que esa función cree con `new`.
+- **`[[Prototype]]`** es el enlace de *cualquier* objeto con su jefe. Se lee con
+  `Object.getPrototypeOf`.
+- **`.prototype`** es una propiedad normal que tienen las *funciones* (constructoras y clases).
+  Es el jefe que se asignará a lo que esa función cree con `new`.
 
-`Array.prototype` no es el prototipo de `Array`; es el prototipo **de los arrays**.
+`Array.prototype` no es el jefe de `Array`; es el jefe **de los arrays**. Esta pregunta pone a
+prueba justo esa distinción:
 
 <Pregunta id="prototipos-metodos-array" />
 
-## Qué hace new
+<Profundiza titulo="por qué no se tocan los prototipos ajenos">
 
-Antes de `class`, las "clases" se escribían con funciones constructoras. Sigue siendo exactamente lo que pasa por debajo:
+Como todos los arrays comparten jefe, añadir un método a `Array.prototype` se lo da a todos los
+arrays del programa, incluidos los de librerías que no esperaban encontrarlo. Algunas librerías
+antiguas lo hacían. MooTools, por ejemplo, añadía su propio `Array.prototype.flatten`, y cuando
+el comité de JavaScript (TC39) quiso estandarizar un método con ese nombre, se descubrió que
+rompía páginas que aún usaban MooTools. El método acabó llamándose `flat`.
+
+</Profundiza>
+
+---
+
+## new: el departamento de contratación
+
+Tercera capa. Antes de `class`, las "clases" se escribían con funciones constructoras, y sigue
+siendo exactamente lo que pasa por debajo. Una función constructora es un **departamento de
+contratación**: su `.prototype` es el jefe que asigna a cada contratado.
 
 ```js
 function Dog(name) {
-  this.name = name; // dato: en cada instancia
+  this.name = name; // dato: en la libreta de cada instancia
 }
 Dog.prototype.bark = function () {
-  return this.name + ": guau"; // método: una vez, en el prototipo
+  return this.name + ": guau"; // método: una vez, en el jefe común
 };
 
 const rex = new Dog("Rex");
@@ -138,7 +304,35 @@ const rex = new Dog("Rex");
 2. Ejecuta `Dog` con `this` apuntando a ese objeto.
 3. Devuelve el objeto (salvo que la función devuelva otro objeto explícitamente).
 
-## class: la misma idea con mejor sintaxis
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+console.log(rex.bark());
+console.log(Object.getPrototypeOf(rex) === Dog.prototype, Object.hasOwn(rex, "bark"));
+```
+
+<Respuesta>
+
+```
+Rex: guau
+true false
+```
+
+`bark` vive en el jefe común, `Dog.prototype`; en la libreta de `rex` solo está `name`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+El punto débil de esta forma es que `Dog` sigue siendo una función normal, y nada te impide
+llamarla sin `new`. En código no estricto, `this` era el objeto global y `Dog("Toby")` escribía
+`name` en el objeto global, en silencio; en modo estricto, `this` es `undefined` y lanza `TypeError`.
+
+---
+
+## class: el mismo departamento, con un formulario mejor
 
 Ahora la versión con `class`, que hace lo mismo:
 
@@ -151,15 +345,39 @@ class Dog {
     return this.name + ": guau";
   }
 }
-
-typeof Dog; // "function"
-Object.getPrototypeOf(new Dog("Rex")) === Dog.prototype; // true
-Object.hasOwn(Dog.prototype, "bark"); // true
 ```
 
-Una clase **es una función**: el `constructor` es su cuerpo y los métodos se colocan en `Dog.prototype`. Lo que añade `class` sobre la versión antigua es útil: no se puede llamar sin `new` (lanza `TypeError`), su cuerpo siempre está en modo estricto y sus métodos no son enumerables.
+<AntesDeSeguir>
 
-Dentro de una clase hay dos lugares distintos donde pueden acabar las cosas, y conviene tenerlo claro:
+¿Qué imprime?
+
+```js
+console.log(typeof Dog, Dog.prototype.constructor === Dog);
+console.log(Object.getOwnPropertyNames(Dog.prototype).join(","));
+console.log(Object.keys(Dog.prototype).length);
+```
+
+<Respuesta>
+
+```
+function true
+constructor,bark
+0
+```
+
+Una clase **es una función**: el `constructor` es su cuerpo y los métodos se colocan en
+`Dog.prototype`, que además apunta de vuelta a la clase con `constructor`. `Object.keys` da `0`
+porque los métodos de una clase **no son enumerables**: no aparecen al recorrer las claves.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Es una de las tres cosas que añade `class`. Las otras: no se puede llamar sin `new` (lanza
+`TypeError` siempre) y su cuerpo siempre está en modo estricto.
+
+Dentro de una clase hay varios sitios donde pueden acabar las cosas. En la oficina: en el jefe
+común, en la libreta de cada empleado o en el propio departamento.
 
 | Sintaxis | Dónde vive |
 |---|---|
@@ -169,11 +387,16 @@ Dentro de una clase hay dos lugares distintos donde pueden acabar las cosas, y c
 | `static algo` | En la propia clase (la función), no en las instancias |
 | `#privado` | Campos: en cada instancia; métodos `#m()`: compartidos. Inaccesible desde fuera de la clase |
 
+Ya viste en la lección de `this` que un campo arrow y un método se comportan distinto. Con la
+tabla delante, esta pregunta te pide decir **dónde** vive cada uno:
+
 <Pregunta id="clases-metodo-vs-campo-arrow" />
 
-En class components verás `handleClick = () => { … }` justo por esto: un campo arrow captura el `this` de la instancia y no se pierde al pasarlo como `onClick`. El precio es una función nueva por instancia.
+En class components verás `handleClick = () => { … }` justo por esto: un campo arrow captura el
+`this` de la instancia y no se pierde al pasarlo como `onClick`. El precio es una función nueva
+por instancia, anotada en cada libreta en vez de una sola en el jefe.
 
-## Campos privados, static, getters y setters
+### Privados, static, getters y setters
 
 ```js
 class Cuenta {
@@ -192,15 +415,27 @@ class Cuenta {
 }
 ```
 
-- **`#campo`** es privado de verdad (lo garantiza el lenguaje, no una convención como `_campo`). Usarlo fuera de la clase es un `SyntaxError`, y no aparece en `Object.keys` ni en `JSON.stringify`.
-- **`static`** pone el miembro en la clase. Lo usas para fábricas (`HttpError.fromStatus(…)`) o, en React, para `getDerivedStateFromError`, que React llama sobre la clase, no sobre la instancia.
-- **`get`/`set`** definen propiedades calculadas: se leen y asignan sin paréntesis, pero ejecutan código.
+- **`#campo`** es privado de verdad: lo garantiza el lenguaje, no una convención como `_campo`.
+  En la oficina es un cajón con llave en el escritorio de cada empleado, y la llave solo la tiene
+  el código escrito dentro de la clase. Usarlo fuera es un `SyntaxError`, y no aparece en
+  `Object.keys` ni en `JSON.stringify`.
+- **`static`** pone el miembro en el propio departamento, la clase. Lo usas para fábricas
+  (`HttpError.fromStatus(…)`) o, en React, para `getDerivedStateFromError`, que React llama
+  sobre la clase, no sobre la instancia.
+- **`get`/`set`** definen propiedades calculadas en el jefe común: se leen y asignan sin
+  paréntesis, pero ejecutan código. Es el setter heredado que viste antes, con mejor sintaxis.
+
+Esta pregunta junta las tres cosas en una clase `Usuario`:
 
 <Pregunta id="clases-privados-static-getter" />
 
-## extends y super
+---
 
-`extends` enlaza **dos** cadenas: la de las instancias y la de las propias clases (por eso los `static` también se heredan).
+## extends: alargar la cadena
+
+Cuarta capa. `extends` le pone jefe al jefe: el jefe común de los perros pasa a tener como jefe
+al de los animales. Y enlaza **dos** cadenas, no una: también el departamento `Dog` tiene como
+jefe al departamento `Animal`, por eso los `static` se heredan.
 
 ```js
 class Animal {
@@ -236,14 +471,107 @@ new Dog(…) ──▶ Dog.prototype ──▶ Animal.prototype ──▶ Object
 
 Dos reglas de `super`:
 
-- En el constructor de una clase derivada tienes que llamar a `super(…)` **antes** de usar `this`. Hasta ese momento la instancia no existe (usar `this` antes lanza `ReferenceError`).
-- `super.metodo()` busca `metodo` empezando en el prototipo del padre, y lo ejecuta con el `this` actual.
+- En el constructor de una clase derivada tienes que llamar a `super(…)` **antes** de usar
+  `this`. Hasta ese momento la instancia no existe (usar `this` antes lanza `ReferenceError`).
+- `super.metodo()` busca `metodo` empezando en el prototipo del padre, y lo ejecuta con el
+  `this` actual. Es saltarte a tu jefe y preguntarle directamente al de arriba.
 
-**`instanceof`** no mira "de qué clase es" el objeto: comprueba si `Clase.prototype` aparece en algún punto de su cadena de prototipos. `new Dog("Rex") instanceof Animal` es `true` porque `Animal.prototype` está dos eslabones arriba.
+<Profundiza titulo="por qué la instancia no existe antes de super">
+
+En una clase base, `new` crea el objeto antes de ejecutar el constructor. En una derivada no:
+el objeto lo crea el constructor del padre, y `super(…)` es la llamada que lo hace. Por eso
+`this` no está disponible antes, y por eso extender clases del lenguaje da instancias de verdad:
+
+```js
+class Lista extends Array {}
+const l = new Lista();
+l[4] = "x";
+console.log(l.length, Array.isArray(l)); // 5 true
+```
+
+Lo mismo con `extends Error`: el objeto lo construye `Error`. Y si una clase derivada no declara
+`constructor`, tiene uno implícito que llama a `super(...args)`.
+
+</Profundiza>
+
+<AntesDeSeguir>
+
+Un método `static` usa `this`. ¿Qué imprime?
+
+```js
+class Animal {
+  static crear(name) {
+    return new this(name);
+  }
+  constructor(name) {
+    this.name = name;
+  }
+}
+class Dog extends Animal {}
+const toby = Dog.crear("Toby");
+console.log(toby instanceof Dog, toby.name);
+console.log(Object.getPrototypeOf(Dog) === Animal, typeof toby.crear);
+```
+
+<Respuesta>
+
+```
+true Toby
+true undefined
+```
+
+`Dog` no tiene `crear` y pregunta a su jefe, `Animal`. Como lo llamaste con `Dog.crear`, `this`
+es `Dog`, y `new this(…)` fabrica un perro. `toby` no ve `crear`: su cadena pasa por los
+`.prototype`, nunca por las clases.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### Qué pregunta instanceof
+
+**`instanceof`** no mira "de qué clase es" el objeto ni quién lo construyó: comprueba si
+`Clase.prototype` aparece en algún punto de su cadena de jefes. `new Dog("Rex") instanceof Animal`
+es `true` porque `Animal.prototype` está dos pisos arriba.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+class Dog {
+  constructor(name) {
+    this.name = name;
+  }
+}
+const impostor = Object.create(Dog.prototype);
+console.log(impostor instanceof Dog, impostor.name);
+const rex = new Dog("Rex");
+Object.setPrototypeOf(rex, null);
+console.log(rex instanceof Dog, rex.name);
+```
+
+<Respuesta>
+
+```
+true undefined
+false Rex
+```
+
+El constructor de `Dog` nunca se ejecutó para `impostor`, pero su jefe es `Dog.prototype`, y eso
+es todo lo que mira `instanceof`. A `rex` le quitaste el jefe: conserva su libreta, pero ya no
+está en la cadena. `instanceof` pregunta por la cadena, no por la historia del objeto.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+---
 
 ## Errores propios
 
-`Error` es una clase más, y extenderla te da errores que puedes distinguir con `instanceof` en un `catch` (o en tu error boundary):
+`Error` es una clase más, y extenderla te da errores que puedes distinguir con `instanceof` en un
+`catch` (o en tu error boundary):
 
 ```js
 class HttpError extends Error {
@@ -263,28 +591,68 @@ try {
 }
 ```
 
+Esta pregunta encadena dos niveles de errores: qué se hereda y qué no.
+
 <Pregunta id="clases-error-propio" />
 
 <Callout type="clave">
 Una clase es una función constructora más un objeto `.prototype` con sus métodos. Las instancias guardan sus datos (propiedades propias, campos, `#privados`) y encuentran los métodos subiendo por la cadena de prototipos. `extends` alarga esa cadena, `super` sube un eslabón e `instanceof` la recorre.
 </Callout>
 
+---
+
+## El ticket, resuelto
+
+**¿Por qué `error.name` dice `"Error"`?** `NotFoundError` nunca anota `name` en la libreta del
+error, así que la lectura sube: `NotFoundError.prototype` no lo tiene, `Error.prototype` sí, y
+vale `"Error"`: la comparación del boundary nunca podía ser cierta. Asigna `this.name` tú mismo,
+con un literal (deducirlo de `this.constructor.name` es frágil: los minificadores pueden
+renombrar las clases).
+
+**¿Es fiable `instanceof`?** Sí: comprueba si `NotFoundError.prototype` está en la cadena del
+error, y lo está porque se creó con `new NotFoundError(…)`. El boundary queda así:
+
+```jsx
+if (error instanceof NotFoundError) return <UsuarioNoExiste />;
+```
+
+**¿De dónde salen `this.props` y `setState`?** `ErrorBoundary` no declara constructor, así que
+el implícito llama a `super(...args)`, y el constructor de `Component` anota `props` en la
+libreta de la instancia. `setState` vive una sola vez en `Component.prototype`, el jefe del jefe
+de cada instancia. (React también marca `Component.prototype` con `isReactComponent` y busca esa
+marca para saber si un componente necesita `new`: `typeof` no le serviría, una clase también es
+una función.)
+
+**¿Por qué `static`?** React llama a `getDerivedStateFromError` sobre la clase
+(`ErrorBoundary.getDerivedStateFromError(error)`), no sobre la instancia, así que tiene que vivir
+en el departamento. `state = …` es un campo: se anota en cada instancia. `render` es un método:
+vive una sola vez en `ErrorBoundary.prototype`.
+
+---
+
 ## Práctica
 
-Primero, una jerarquía de errores con `class`, como la que usarías en una capa de `fetch`:
+El ticket #815 deja una tarea pendiente: el boundary distingue un 404, pero la capa de `fetch`
+lanza errores genéricos. Te toca la jerarquía completa, con `cause`, un getter y una fábrica
+`static`. Este ejercicio pone a prueba `extends`, `super` y dónde vive cada miembro:
 
 <Ejercicio id="prototipos-y-clases-errores-http" />
 
-Después, el mismo tipo de herencia **sin** `class`, solo con `Object.create`, para ver el mecanismo desnudo:
+Después, para convencer al autor del PR de que no hay magia, la misma herencia **sin** `class`,
+solo con `Object.create`. Este ejercicio pone a prueba que los métodos se heredan, no se copian:
 
 <Ejercicio id="prototipos-y-clases-sin-class" />
 
-## Resumen
+---
 
-- Todo objeto tiene un **`[[Prototype]]`** (se lee con `Object.getPrototypeOf`). Leer una propiedad sube por la **cadena de prototipos** hasta encontrarla o llegar a `null`.
-- **Asignar** escribe en el propio objeto (salvo que haya un setter heredado): si la propiedad existía más arriba, la tapa (*shadowing*). Mutar un objeto heredado, en cambio, afecta a todos los que lo comparten.
-- `Object.hasOwn` distingue propias de heredadas; `in` mira toda la cadena.
-- `.prototype` es una propiedad de las funciones constructoras: el objeto que reciben como prototipo las instancias creadas con `new`. Así todos los arrays comparten `Array.prototype.map`.
-- `class` es sintaxis sobre funciones y prototipos: métodos, getters y setters van al prototipo (compartidos); campos y `#privados` van a cada instancia; `static` va a la clase.
-- `extends` encadena prototipos, `super(…)` debe llamarse antes de usar `this` e `instanceof` busca `Clase.prototype` en la cadena.
-- Extiende `Error` para errores con tipo; asigna `name` tú mismo y pasa `{ cause }` para conservar el error original.
+## Lo que ahora puedes explicar
+
+Ya sabes qué es una clase en JavaScript: una función, un objeto `.prototype` con los métodos y
+una cadena de jefes que se recorre al leer. Sabes por qué leer sube y escribir no, por qué un
+array en un prototipo es una pizarra compartida y dónde acaba cada miembro de una clase. Y sabes
+que `instanceof` es fiable porque pregunta por la cadena, que es lo único que de verdad existe.
+
+Has visto de pasada que un objeto literal también tiene jefe: `"toString" in {}` es `true`. Eso
+importa cuando usas un objeto como diccionario, y es uno de los puntos de partida de la
+siguiente lección, **Objetos y colecciones**: cómo recorrer y describir propiedades, qué
+significa de verdad "enumerable" y cuándo un `Map` es mejor diccionario que un objeto.

@@ -8,9 +8,9 @@ export const prototiposYClases: LessonDef = {
   slug: "prototipos-y-clases",
   title: "Prototipos y clases",
   summary:
-    "Qué es de verdad una clase en JavaScript: la cadena de prototipos, por qué todos los arrays tienen map y cómo escribir error boundaries y errores propios con class.",
+    "Por qué JavaScript no tiene clases como Java: la cadena de prototipos heredada de Self, qué hace new, dónde vive cada miembro de una clase y cómo arreglar un error boundary que no reconoce sus propios errores.",
   concepts: ["js.prototipos", "js.clases"],
-  minutes: 40,
+  minutes: 50,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
