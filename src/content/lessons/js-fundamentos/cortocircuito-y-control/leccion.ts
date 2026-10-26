@@ -8,9 +8,9 @@ export const cortocircuitoYControl: LessonDef = {
   slug: "cortocircuito-y-control",
   title: "Cortocircuito y control de flujo",
   summary:
-    "Por qué {items.length && <List />} pinta un 0 y config.timeout || 3000 ignora un 0 legítimo: &&, ||, ??, ?. y las estructuras de control sin sorpresas.",
+    "Por qué {items.length && <List />} pinta un 0 y config.timeout || 3000 ignora un 0 legítimo: && y || como agujas que eligen un operando, ?? y ?. desde ES2020, y el control de flujo sin sorpresas.",
   concepts: ["js.cortocircuito", "js.control-flujo"],
-  minutes: 35,
+  minutes: 45,
   questions: preguntas,
   exercises: ejercicios,
   videos: [],
