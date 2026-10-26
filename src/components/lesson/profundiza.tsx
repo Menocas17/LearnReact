@@ -5,7 +5,7 @@ export function Profundiza({ titulo, children }: { titulo: string; children: Rea
   return (
     <details className="rounded-md border border-border bg-subtle p-4">
       <summary className="cursor-pointer select-none font-semibold">📚 Para profundizar: {titulo}</summary>
-      <div className="mt-3 space-y-3 text-sm [&>p]:m-0">{children}</div>
+      <div className="mt-3 space-y-3 text-sm">{children}</div>
     </details>
   );
 }

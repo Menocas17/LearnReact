@@ -12,7 +12,7 @@ const components: MDXComponents = {
   ul: (props) => <ul className="list-disc space-y-1 pl-6" {...props} />,
   ol: (props) => <ol className="list-decimal space-y-1 pl-6" {...props} />,
   blockquote: (props) => (
-    <blockquote className="space-y-2 border-l-4 border-primary/40 pl-4 [&>p]:m-0" {...props} />
+    <blockquote className="space-y-2 border-l-4 border-primary/40 pl-4" {...props} />
   ),
   hr: () => <hr className="my-10 border-border" />,
   a: (props) => <a className="text-primary hover:underline" {...props} />,
