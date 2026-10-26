@@ -8,9 +8,9 @@ export const metodosDeArray: LessonDef = {
   slug: "metodos-de-array",
   title: "Métodos de array",
   summary:
-    "De bucles con push y sort que muta a map, filter, reduce y toSorted: qué devuelve cada método, cuáles mutan y las trampas (parseInt, arrays vacíos, tildes al ordenar).",
+    "Un catálogo que desordena otro componente: los métodos de array como una cadena de montaje, qué sale de cada estación, cuáles tocan la cinta original y las trampas (parseInt, arrays vacíos, sort que compara como strings).",
   concepts: ["js.metodos-array"],
-  minutes: 40,
+  minutes: 55,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
