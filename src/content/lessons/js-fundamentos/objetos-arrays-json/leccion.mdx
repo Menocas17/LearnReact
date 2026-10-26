@@ -53,13 +53,14 @@ la página, y el formato de moda para intercambiarlos era XML: verboso y pesado 
 JavaScript. Douglas Crockford, entre otros, se fijó en algo que ya estaba ahí: la sintaxis con la
 que JavaScript escribe objetos y arrays literales (`{ "id": 1, "tags": ["a"] }`) también sirve
 como formato de datos. Le puso nombre, **JSON** (*JavaScript Object Notation*), publicó su
-gramática en json.org y lo popularizó. Él mismo dice que no lo inventó, sino que lo *descubrió*.
+gramática en json.org y lo popularizó. En sus charlas insiste en que no lo inventó: lo
+*descubrió*, porque ya estaba en el lenguaje.
 
 JSON acabó estandarizado de forma independiente de JavaScript (ECMA-404 y la RFC 8259) porque su
 objetivo era ser un formato de **intercambio entre cualquier lenguaje**. Eso explica su pobreza:
 solo admite lo que se puede escribir como **literal** y representar igual en Python, Java o Go.
 `null`, `true`, `false`, números, strings, arrays y objetos son literales. `undefined`, `NaN` e
-`Infinity` no lo son (en JavaScript son variables globales). Una fecha tampoco: se fabrica con
+`Infinity` no lo son (en JavaScript son propiedades del objeto global). Una fecha tampoco: se fabrica con
 `new Date(…)`, que es código. Y una función es código, no datos. Nada de eso tiene sitio en JSON.
 
 <Profundiza titulo="del eval a JSON.parse, y un subconjunto que no lo era del todo">
@@ -70,9 +71,10 @@ código en ese texto, se ejecutaba. Primero aparecieron librerías que validaban
 evaluarlo, y ECMAScript 5 (2009) incorporó el objeto `JSON` con `parse` y `stringify`, que leen
 datos sin ejecutar nada.
 
-Las claves van siempre entre comillas dobles en parte por eso mismo: en el JavaScript de entonces
-ciertas palabras reservadas no podían usarse como clave sin comillas, y exigir comillas siempre
-evitaba tener que listarlas en la gramática.
+Las claves van siempre entre comillas dobles por una razón parecida: en el JavaScript de entonces
+(ES3) una palabra reservada, como `do` o `class`, no podía usarse como clave sin comillas. Según
+cuenta Crockford, exigir comillas siempre le evitó tener que copiar la lista de palabras reservadas
+en la especificación de JSON.
 
 Un detalle curioso: durante años JSON *no* era un subconjunto exacto de JavaScript. Dentro de un
 string, JSON permitía los caracteres U+2028 y U+2029 (separadores de línea y de párrafo), y
@@ -86,7 +88,7 @@ Con eso en mente, la imagen de la lección.
 
 ## Cajas con etiquetas dentro
 
-En la lección de variables y funciones, tu programa era una **mesa de trabajo** llena de valores,
+En "Variables y funciones", tu programa era una **mesa de trabajo** llena de valores,
 y las variables eran etiquetas atadas con un hilo a esos valores. Ahora miramos dos valores
 especiales de la mesa.
 
@@ -655,6 +657,6 @@ estado. Y cuando un dato cruza una frontera, ya no esperas que llegue la mesa: l
 sabes qué se queda por el camino y cómo revivirlo.
 
 Has visto `map` saltándose huecos y `toSorted` ordenando sin mutar, pero apenas has abierto la caja
-de herramientas. La siguiente lección, métodos de array, se dedica a ella: `map`, `filter`, `find`,
+de herramientas. La siguiente lección, "Métodos de array", se dedica a ella: `map`, `filter`, `find`,
 `reduce` y compañía, qué devuelve cada uno y cómo encadenarlos sin perder de vista qué caja tienes
 en la mano.

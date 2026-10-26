@@ -39,6 +39,8 @@ export const metodosDeArray: LessonDef = {
     { title: "MDN: Array.from()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/Array/from" },
     { title: "MDN: Object.groupBy()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/Object/groupBy" },
     { title: "MDN: String.prototype.localeCompare()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/String/localeCompare" },
+    { title: "Chrome for Developers: #SmooshGate FAQ", url: "https://developer.chrome.com/blog/smooshgate" },
+    { title: "TC39: propuesta Array.prototype.includes", url: "https://github.com/tc39/proposal-Array.prototype.includes" },
     { title: "react.dev: Renderizado de listas", url: "https://es.react.dev/learn/rendering-lists" },
   ],
   reviewed: { date: "2026-10-14", versions: { node: "22", ecmascript: "2024", react: "19.3" } },

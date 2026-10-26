@@ -53,8 +53,8 @@ Ya usas `map` y `filter` a diario en JSX. Esta lección va de lo que no se ve a 
 `map`, `filter` y `reduce` no los inventó JavaScript. Vienen de la **programación funcional**,
 la tradición de Lisp y, más tarde, de lenguajes como Haskell: en lugar de escribir el bucle
 (índice, condición, incremento, `push`), le pasas a una función otra función que dice qué hacer
-con **cada** elemento, y el recorrido es asunto de la función. Es justo lo que viste en la lección
-anterior: funciones entregadas a otras funciones.
+con **cada** elemento, y el recorrido es asunto de la función. Es justo lo que viste en "Variables
+y funciones": máquinas entregadas a otras máquinas.
 
 Al principio, JavaScript no los tenía: todo era `for` con índices. Firefox los añadió
 primero como extensión propia y bibliotecas como Prototype ofrecían sus versiones, hasta que
@@ -71,11 +71,12 @@ nombre.
 <Profundiza titulo="cuando un nombre rompe la web: flatten y contains">
 
 La regla de no romper la web no es teórica. `flat` iba a llamarse `flatten`, pero al probarlo en
-navegadores se descubrió que rompía páginas que usaban la biblioteca MooTools, que ya definía su
-propio `Array.prototype.flatten` con otro comportamiento. El comité eligió otro nombre (el
-episodio se conoce como *SmooshGate*, por una propuesta medio en broma de llamarlo `smoosh`). Con
-`includes` pasó algo parecido: se propuso como `contains` y se renombró por un conflicto similar
-con MooTools.
+navegadores se descubrió que rompía páginas que usaban la biblioteca MooTools: esta definía su
+propio `Array.prototype.flatten` no estándar, y con el método nativo presente su código dejaba de
+copiarlo a otros objetos que lo necesitaban. El comité eligió otro nombre (el episodio se conoce
+como *SmooshGate*, por una propuesta medio en broma de llamarlo `smoosh`). Con `includes` pasó
+algo parecido: se propuso como `contains`, pero ese nombre también rompía sitios con MooTools, y
+se renombró.
 
 </Profundiza>
 
@@ -83,8 +84,9 @@ con MooTools.
 
 ## La cadena de montaje
 
-La imagen de toda la lección: un array es una **cinta transportadora** con cajas en fila, y cada
-método es una **estación** de una cadena de montaje. A cada estación le entregas una máquina (el
+En "Objetos, arrays y JSON", el array era una caja con etiquetas numeradas sobre la mesa de
+trabajo. Para esta lección, despliégala: la imagen es una **cinta transportadora** con sus
+elementos en fila, como cajas, y cada método es una **estación** de una cadena de montaje. A cada estación le entregas una máquina (el
 *callback*, la función que le pasas) que dice qué hacer con cada caja.
 
 La pregunta que hay que hacerse en cada estación tiene dos partes: **¿qué sale por el otro
@@ -249,7 +251,8 @@ true 2
 ```
 
 Con la segunda caja (`5 > 4`) la respuesta ya es "sí": las cajas `2` y `8` ni se miran. Es el
-mismo cortocircuito que el de `||` y `&&` del principio del módulo, aplicado a una cinta entera.
+mismo cortocircuito de `||` y `&&` que viste en "Cortocircuito y control de flujo", aplicado a
+una cinta entera.
 
 </Respuesta>
 
@@ -399,8 +402,9 @@ carácter a carácter. Y `sorted` no es una cinta nueva: es **la misma**, ya reo
 
 Devolver un booleano (`a > b`) tampoco sirve como comparador: `false` se convierte en `0`
 ("iguales") y `true` en `1`, nunca negativo, así que el comparador es inconsistente y el resultado
-depende del motor. El `? 1 : -1` del ticket tiene el problema contrario: nunca devuelve `0`, así
-que dos nombres iguales se declaran a la vez "antes" y "después" el uno del otro.
+depende del motor. El `? 1 : -1` del ticket tiene el problema contrario: nunca devuelve `0`. Con
+dos nombres iguales, `compare(a, b)` da `-1` ("`a` va antes") y `compare(b, a)` también da `-1`
+("`b` va antes"): cada uno se declara anterior al otro, y el comparador vuelve a ser inconsistente.
 
 Esta pregunta pone a prueba qué pasa cuando una función auxiliar "solo ordena" las props:
 

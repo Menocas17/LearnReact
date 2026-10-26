@@ -38,8 +38,7 @@ Todo es JavaScript puro: **destructuring**, **rest** y **spread**, y sus reglas 
 ## Tres puntos que llegaron en dos tandas
 
 Antes de 2015, sacar tres propiedades de un objeto eran tres líneas (`var name = user.name;` …)
-y pasar un array como argumentos sueltos se hacía
-con `Math.max.apply(null, nums)`. ECMAScript 2015 (ES6), la misma edición que trajo `let`,
+y pasar un array como argumentos sueltos se hacía con `Math.max.apply(null, nums)`. ECMAScript 2015 (ES6), la misma edición que trajo `let`,
 `const` y las arrows, añadió el **destructuring** (de objetos y de arrays), el **spread** en
 arrays y llamadas y los **parámetros rest**. También añadió `Object.assign` para copiar
 propiedades de un objeto a otro.
@@ -54,13 +53,15 @@ siguen la misma regla, y es la que explica el ticket.
 
 ## Cajas en la mesa
 
-En la lección de variables y funciones la imagen era una **mesa de trabajo**: los valores están
-sobre la mesa y las variables son **etiquetas** atadas con un hilo a un valor. Ahora miramos
-dentro de dos valores concretos:
+En "Variables y funciones" la imagen era una **mesa de trabajo**: los valores están sobre la mesa
+y las variables son **etiquetas** atadas con un hilo a un valor. En "Objetos, arrays y JSON"
+miraste dentro de dos de esos valores. Aquí, para no confundir las propiedades con las variables,
+a cada etiqueta interna la llamaremos **compartimento**:
 
 - Un **objeto** es una **caja con compartimentos rotulados**: cada clave es un rótulo y cada
   compartimento guarda un valor.
-- Un **array** es una **fila de compartimentos numerados**: no tienen rótulo, solo posición.
+- Un **array** es una **fila de compartimentos numerados**: lo que importa es la posición
+  (`0`, `1`, `2`…), no un nombre.
 
 Las tres sintaxis de esta lección son tres formas de trabajar con esas cajas:
 
@@ -182,7 +183,7 @@ Con datos que vienen de una API (donde `null` es habitual), el destructuring ani
 
 ### Cuarta capa: la caja llega por la ranura
 
-En la lección anterior viste que una función es una máquina con ranuras de entrada. La firma
+En "Variables y funciones" viste que una función es una máquina con ranuras de entrada. La firma
 `function Card({ title, onClose = () => {} })` no es sintaxis de React: es destructuring del
 **primer parámetro**. React llama a `Card(props)` con una caja, y JavaScript la abre antes de
 ejecutar el cuerpo.
@@ -328,7 +329,8 @@ undefined true azul
 ```
 
 `options` tiene un compartimento `size`, aunque contenga `undefined`, y se vuelca encima del
-`"md"`. Pasa con datos de formularios o con objetos como `{ size: props.size }`. El primer ejercicio va de esto.
+`"md"`. Pasa con datos de formularios o con objetos como `{ size: props.size }`. El primer
+ejercicio va de esto.
 
 </Respuesta>
 
@@ -524,12 +526,13 @@ Sabes que el destructuring anidado abre cajas sin preguntar, que el spread de ob
 compartimentos (también los `undefined`) y gana el último, que en arrays hay que poder recorrer
 lo que vuelcas y que toda copia con `...` es superficial.
 
-Con esto cierras el módulo de fundamentos: de los tipos y la coerción a los métodos de array,
-y ahora la sintaxis que une todo eso en cada componente de React. El
-proyecto del módulo, una serie de funciones utilitarias con tests, es el sitio para usarlo todo
+Con esto cierras el módulo de fundamentos: de los tipos y la coerción a los métodos de array, y
+ahora la sintaxis que une todo eso en cada componente de React. El proyecto del módulo, **Katas
+de fundamentos** (una serie de funciones utilitarias con tests), es el sitio para usarlo todo
 junto.
 
-El módulo 3, **JavaScript profundo**, abre con los **closures**: por qué el setter de `useState`
-de juguete pudo cambiar su `value` interno aunque tu `count` no se moviera. Y en **Valores y
-referencias** volverás a los hilos de esta lección para ver a fondo las copias superficiales y
-profundas.
+El módulo 3, **JavaScript profundo**, empieza por **Closures**: la pieza que explica cómo el
+setter del `useState` de juguete pudo cambiar su `value` interno aunque tu `count` no se moviera.
+Después, **Scope y hoisting** te enseña dónde vive cada etiqueta y desde cuándo existe. Y en
+**Valores y referencias** volverás a los hilos de esta lección para ver a fondo las copias
+superficiales y profundas.
