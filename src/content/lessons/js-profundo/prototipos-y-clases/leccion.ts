@@ -31,6 +31,14 @@ export const prototiposYClases: LessonDef = {
   ],
   sources: [
     {
+      title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020)",
+      url: "https://doi.org/10.1145/3386327",
+    },
+    {
+      title: "Chrome for Developers: #SmooshGate (por qué flatten se llama flat)",
+      url: "https://developer.chrome.com/blog/smooshgate",
+    },
+    {
       title: "MDN: Herencia y la cadena de prototipos",
       url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Guide/Inheritance_and_the_prototype_chain",
     },

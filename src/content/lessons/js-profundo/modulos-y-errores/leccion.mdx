@@ -61,7 +61,7 @@ Después llegaron sistemas de verdad, cada uno para su entorno:
   `module.exports`, de forma **síncrona**. En un servidor, leer del disco es rápido.
 - **AMD** (con RequireJS como implementación más conocida), para el navegador, donde no se puede
   bloquear la página esperando una descarga: las dependencias se cargaban de forma **asíncrona**.
-- Los **bundlers** (Browserify primero, webpack después) tomaron otro camino: leer el código con
+- Los **bundlers** (Browserify, webpack y otros) tomaron otro camino: leer el código con
   `require` antes de publicarlo y unirlo todo en un solo archivo para el navegador.
 
 ES2015 añadió al lenguaje su propia sintaxis: `import` y `export`, los
@@ -184,7 +184,7 @@ En el servidor, todo lo que guardes en variables de módulo es compartido por **
 
 ### La ventanilla es un cristal, no una fotocopiadora
 
-Tercera capa. En la lección de scope viste que un `import` es un casillero con ventanilla que da
+Tercera capa. En **Scope y hoisting** viste que un `import` es un casillero con ventanilla que da
 al casillero del otro archivo. Ahora míralo desde el edificio: por la ventanilla ves **lo que hay
 ahora mismo** sobre la mesa de la otra oficina, no una copia de lo que había cuando te asomaste.
 Eso es un **live binding**: una vista de solo lectura de la variable original. Esta pregunta pone
@@ -198,12 +198,12 @@ a prueba sus dos mitades:
 
 Ojo: "no reasignar" no es "no mutar". Si por la ventanilla te pasan un objeto o un array, puedes
 cambiar sus propiedades, y lo verán todos los módulos que lo importan, porque es el mismo objeto.
-Es lo que hacía `vistos.push` hace un momento, y lo que estudiaste en valores y referencias.
+Es lo que hacía `vistos.push` hace un momento, y lo que estudiaste en **Valores y referencias**.
 
 El cristal también explica las **dependencias circulares**: si `a.js` importa `b.js` y `b.js`
 importa `a.js`, uno de los dos empieza a evaluarse antes de que el otro termine, y por la
 ventanilla puede ver un export todavía sin inicializar: un `ReferenceError` por la TDZ, o
-`undefined` en código compilado. Lo viste a fondo en scope y hoisting; la solución casi siempre
+`undefined` en código compilado. Lo viste a fondo en **Scope y hoisting**; la solución casi siempre
 es sacar lo compartido a un tercer módulo del que dependan los dos.
 
 El sistema anterior, CommonJS, no tiene cristal: `require` devuelve el objeto `module.exports`
@@ -247,8 +247,9 @@ configuraciones y paquetes antiguos.
 
 <Profundiza titulo="cómo sabe Node qué sistema usar">
 
-`.mjs` siempre es ESM y `.cjs` siempre es CommonJS; un `.js` es ESM si el `package.json` más
-cercano tiene `"type": "module"`. En un proyecto de Next.js no lo notas: el bundler procesa tu
+`.mjs` siempre es ESM y `.cjs` siempre es CommonJS. Un `.js` sigue el campo `"type"` del
+`package.json` más cercano (`"module"` o `"commonjs"`); si no hay campo `"type"`, Node 22 lo trata
+como CommonJS salvo que detecte sintaxis de ESM (`import`, `export`) en el archivo. En un proyecto de Next.js no lo notas: el bundler procesa tu
 código antes de ejecutarlo.
 
 </Profundiza>
@@ -337,8 +338,8 @@ undefined
 ```
 
 Lo que llega al `catch` es exactamente lo que se lanzó: un string, sin ningún dato de dónde
-ocurrió. Por eso TypeScript, con `strict`, tipa la variable del `catch` como `unknown`: puede ser
-cualquier cosa.
+ocurrió. Por eso TypeScript, con `strict` (que activa `useUnknownInCatchVariables`), tipa la variable del
+`catch` como `unknown`: puede ser cualquier cosa.
 
 </Respuesta>
 

@@ -58,8 +58,8 @@ rápido, pero el objeto no se había diseñado para eso, y se notaba:
 
 - **Las claves solo pueden ser strings** (y, desde ES2015, symbols). Todo lo demás se convierte a
   string: `1` y `"1"` son la misma clave, y cualquier objeto acaba como `"[object Object]"`.
-- **El objeto hereda propiedades.** `{}` tiene detrás `Object.prototype` (lo viste en la lección
-  anterior), con `toString` o `constructor`. Un diccionario puede "encontrar" cosas que nunca
+- **El objeto hereda propiedades.** `{}` tiene detrás `Object.prototype` (lo viste en **Prototipos y
+  clases**), con `toString` o `constructor`. Un diccionario puede "encontrar" cosas que nunca
   guardaste. Hasta `"__proto__"` es especial: asignarla no crea una
   propiedad, sino que intenta cambiar el prototipo.
 - **No sabe su tamaño** ni se recorre directamente: hay que pedirle la lista de claves.
@@ -383,7 +383,7 @@ aviso. Al pasar por
 ¿Cuándo usar cada uno? Un objeto para datos con forma fija (un usuario, unas props) y para lo que
 vas a serializar o guardar en estado de forma simple. Un `Map` cuando es un diccionario dinámico:
 muchas altas y bajas, claves que no son strings o cuando te importa el orden de inserción. Y en estado
-de React, mutar un `Map` y pasar el mismo al setter no provoca un render (valores y referencias):
+de React, mutar un `Map` y pasar el mismo al setter no provoca un render (lo viste en **Valores y referencias**):
 `setMapa((prev) => new Map(prev).set(id, valor))`.
 
 ## Set: la cajonera de solo etiquetas

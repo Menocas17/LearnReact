@@ -61,7 +61,7 @@ lenguaje experimental creado en los años 80 por David Ungar y Randall Smith. En
 clases, solo objetos. Cuando a un objeto le piden algo que no tiene, **delega** en otro objeto.
 Un concepto en vez de dos.
 
-Como viste en la lección de closures, la sintaxis de JavaScript tenía que parecerse a Java. El
+Como viste en **Closures**, Netscape exigía que el lenguaje se pareciera a Java. El
 resultado fue un híbrido: debajo, delegación al estilo Self; encima, `new` y funciones
 constructoras con un aire familiar. Durante años, "hacer una clase" significó escribir una
 función y colgar métodos de su `.prototype` a mano.
@@ -135,7 +135,7 @@ undefined hace ...
 ```
 
 El jefe le dice a `rex` **cómo** describirse, pero lo hace `rex` con su propia libreta: como
-viste en la lección de `this`, `this` es el objeto antes del punto, aunque la función se haya
+viste en la lección **this**, `this` es el objeto antes del punto, aunque la función se haya
 encontrado un piso más arriba. Por eso un único `describe` sirve para todos.
 Llamado sobre `animal`, `this` es `animal`, que no tiene `name`.
 
@@ -387,7 +387,7 @@ común, en la libreta de cada empleado o en el propio departamento.
 | `static algo` | En la propia clase (la función), no en las instancias |
 | `#privado` | Campos: en cada instancia; métodos `#m()`: compartidos. Inaccesible desde fuera de la clase |
 
-Ya viste en la lección de `this` que un campo arrow y un método se comportan distinto. Con la
+Ya viste en la lección **this** que un campo arrow y un método se comportan distinto. Con la
 tabla delante, esta pregunta te pide decir **dónde** vive cada uno:
 
 <Pregunta id="clases-metodo-vs-campo-arrow" />
@@ -420,8 +420,8 @@ class Cuenta {
   el código escrito dentro de la clase. Usarlo fuera es un `SyntaxError`, y no aparece en
   `Object.keys` ni en `JSON.stringify`.
 - **`static`** pone el miembro en el propio departamento, la clase. Lo usas para fábricas
-  (`HttpError.fromStatus(…)`) o, en React, para `getDerivedStateFromError`, que React llama
-  sobre la clase, no sobre la instancia.
+  (`HttpError.fromStatus(…)`) o, en React, para `getDerivedStateFromError`, que React busca
+  en la clase, no en la instancia.
 - **`get`/`set`** definen propiedades calculadas en el jefe común: se leen y asignan sin
   paréntesis, pero ejecutan código. Es el setter heredado que viste antes, con mejor sintaxis.
 
@@ -623,9 +623,9 @@ de cada instancia. (React también marca `Component.prototype` con `isReactCompo
 marca para saber si un componente necesita `new`: `typeof` no le serviría, una clase también es
 una función.)
 
-**¿Por qué `static`?** React llama a `getDerivedStateFromError` sobre la clase
-(`ErrorBoundary.getDerivedStateFromError(error)`), no sobre la instancia, así que tiene que vivir
-en el departamento. `state = …` es un campo: se anota en cada instancia. `render` es un método:
+**¿Por qué `static`?** React busca `getDerivedStateFromError` en la clase
+(`ErrorBoundary.getDerivedStateFromError`), no en la instancia, así que tiene que vivir en el
+departamento. (Si lo declaras sin `static`, React lo ignora y, en desarrollo, te avisa en consola.) `state = …` es un campo: se anota en cada instancia. `render` es un método:
 vive una sola vez en `ErrorBoundary.prototype`.
 
 ---

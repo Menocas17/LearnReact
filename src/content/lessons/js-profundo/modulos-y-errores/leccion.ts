@@ -23,6 +23,14 @@ export const modulosYErrores: LessonDef = {
     },
   ],
   sources: [
+    {
+      title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020)",
+      url: "https://doi.org/10.1145/3386327",
+    },
+    {
+      title: "Node.js: Determinar el sistema de módulos",
+      url: "https://nodejs.org/docs/latest-v22.x/api/packages.html#determining-module-system",
+    },
     { title: "MDN: Módulos JavaScript", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Guide/Modules" },
     { title: "MDN: import", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Statements/import" },
     { title: "MDN: export", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Statements/export" },
