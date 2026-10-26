@@ -1,6 +1,10 @@
-## El bug
+## Tres síntomas, un mismo ticket
 
-Dos tickets que llegan tarde o temprano a cualquier app con carrito o con fechas:
+> **#304 — "El checkout se ve raro en México".** El total sale como `0.30000000000000004 €`. La
+> cita que reservé para el 14 sale el 13. Y el campo de notas dice que "ok 👍👍👍" pasa del
+> límite de 6 caracteres.
+
+En tu máquina, en España, todo se veía bien. El código es de los que escribes sin pensar:
 
 ```jsx
 function Total({ items }) {
@@ -12,30 +16,102 @@ function Cita({ fecha }) {
   // fecha = "2026-10-14", guardada desde un <input type="date">
   return <p>{new Date(fecha).toLocaleDateString()}</p>; // en México: "13/10/2026"
 }
+
+const notaValida = (nota) => nota.length <= 6; // "ok 👍👍👍" → false
 ```
 
-En tu máquina todo se veía bien; en producción el total tiene 17 decimales y la cita aparece **un día antes**. Ninguno de los dos es un bug de React: son reglas de JavaScript sobre números y fechas que casi nadie lee hasta que le muerden. Vamos a recorrerlas, empezando por los strings, que tienen menos trampas pero las tienen.
+Ninguno es un bug de React: son reglas de JavaScript sobre texto, números y fechas que casi
+nadie lee hasta que le muerden. Cuatro preguntas:
 
-## Strings
+1. ¿Por qué `0.1 + 0.2` no da `0.3`, y cómo se suma dinero sin ese ruido?
+2. ¿Por qué un emoji cuenta como dos caracteres?
+3. ¿Por qué la cita sale un día antes, y solo para el usuario de México?
+4. ¿Cómo se muestra bien una fecha en Next.js sin que React se queje de un *hydration mismatch*?
 
-### Template literals
+---
 
-Ya los usas: entre backticks puedes interpolar **cualquier expresión** con `${…}`, no solo variables, y escribir varias líneas.
+## Tres decisiones de 1995
+
+Los tres síntomas vienen de decisiones tomadas cuando JavaScript nació en Netscape, en 1995, con
+la orden de parecerse a Java.
+
+**Texto.** Unicode se diseñó al principio para caber en 16 bits (65 536 posiciones). Java y
+JavaScript adoptaron eso: un string es una secuencia de **unidades de 16 bits** (UTF-16). Después
+Unicode creció mucho más allá, y los caracteres que no caben (casi todos los emojis) se guardan
+como **dos** unidades, un *par subrogado* (*surrogate pair*). El lenguaje no podía cambiar qué
+cuenta `length` sin romper páginas existentes; ES2015 añadió formas nuevas de recorrer un string
+por caracteres completos, y `length` siguió igual.
+
+**Números.** Desde la primera versión, JavaScript tuvo un solo tipo numérico: el `number`, un
+**double** de 64 bits del estándar IEEE 754 (publicado en 1985, el formato de coma flotante que
+implementan los procesadores actuales). Un tipo para todo, sin elegir entre `int`, `long` o `float`. Los
+enteros arbitrariamente grandes (`BigInt`) no llegaron hasta ES2020.
+
+**Fechas.** El `Date` de JavaScript 1.0 se tradujo directamente del `java.util.Date` de Java 1.0,
+con sus defectos: meses que empiezan en 0 y objetos que se modifican a sí mismos. Java declaró
+obsoletos la mayoría de esos métodos en su versión siguiente, la 1.1.
+JavaScript no podía: la web ya dependía de ellos. Es el mismo principio de la lección de tipos,
+**no romper la web**: los errores de diseño no se corrigen, se rodean.
+
+---
+
+## Lo que se guarda y lo que se ve
+
+Esta imagen te acompaña toda la lección. JavaScript no guarda "texto", "0.1" ni "el 14 de
+octubre". Guarda **posiciones en una cinta con marcas fijas**. Lo que tú ves es una **etiqueta**
+que alguien imprime al leer la cinta.
+
+Los tres síntomas del ticket son lo mismo: la etiqueta que esperabas no coincide con lo que hay en
+la cinta.
+
+### Primera capa: la cinta del texto
+
+Un string es una cinta dividida en **casillas** de 16 bits. Casi todas las letras ocupan una
+casilla; un emoji ocupa dos. `length` cuenta casillas, no lo que el usuario percibe como
+caracteres.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
 
 ```js
-const qty = 3;
-const msg = `Tienes ${qty} ${qty === 1 ? "artículo" : "artículos"} (${(qty * 4.5).toFixed(2)} €)`;
+const msg = "ok 👍";
+console.log(msg.length, [...msg].length);
+console.log(msg.at(-1) === "👍", [...msg].at(-1) === "👍");
 ```
 
-Detalle útil: lo interpolado se convierte con `String(valor)`. Por eso `${null}` imprime `"null"` y `${obj}` imprime `"[object Object]"`: si ves eso en la UI, estás interpolando algo que no es lo que crees.
+<Respuesta>
 
-### Son inmutables
+```
+5 4
+false true
+```
 
-Ningún método de string modifica el original: **todos devuelven un string nuevo**. `name.trim()` en una línea suelta no hace nada útil. Es el mismo modelo mental que el estado de React: no se muta, se reemplaza.
+`"o"`, `"k"` y el espacio ocupan una casilla cada uno; el 👍, dos. El spread (`[...msg]`) itera por
+*code points* (puntos de código: caracteres Unicode completos) y junta las dos casillas del emoji.
+`at(-1)`, en cambio, devuelve la última casilla: la mitad de un emoji, que no es igual a 👍.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Hay casos en los que ni siquiera un code point es "un carácter": `"👍🏽".length` es 4, porque es un
+emoji más un modificador de tono, y `"é".normalize("NFD").length` es 2 (una `"e"` más un acento
+combinable). Consecuencias reales: un contador de "máximo 280 caracteres" con `length` penaliza los
+emojis, y un `slice(0, 10)` puede partir un emoji por la mitad y dejar un carácter roto. Si
+necesitas contar lo que el usuario percibe, existe `Intl.Segmenter`; para el resto de casos,
+`length` está bien.
+
+#### La cinta está plastificada
+
+Ninguna casilla se puede reescribir: los strings son **inmutables**. Ningún método modifica el
+original; **todos devuelven un string nuevo**, y `name.trim()` en una línea suelta no hace nada
+útil. Es el mismo modelo que el estado de React: no se muta, se reemplaza. Esta pregunta pone a
+prueba la inmutabilidad, `at` y el `length` de un emoji:
 
 <Pregunta id="strings-inmutables-at" />
 
-### Los métodos que vas a usar
+Los métodos que vas a usar, todos devolviendo cintas nuevas:
 
 ```js
 const s = "  Hola, Mundo  ";
@@ -49,20 +125,54 @@ s.trim();                    // "Hola, Mundo" (también trimStart / trimEnd)
 "archivo.tar.gz".at(-1);      // "z"
 ```
 
-Dos parejas que confunden:
+`replace` con un string reemplaza solo la primera aparición; para todas usa `replaceAll` o una
+regex con la bandera `g`. Y los template literals (entre backticks) interpolan **cualquier
+expresión** con `${…}`, no solo variables, y admiten varias líneas:
 
-- **`slice` vs `substring`**: los dos extraen un trozo `[inicio, fin)`. `slice` acepta negativos (`"hola".slice(-2)` es `"la"`); `substring` los trata como 0 y, si `inicio > fin`, los intercambia en silencio. Usa `slice` y olvídate del otro.
-- **`at(-1)` vs `[-1]`**: los corchetes buscan una **propiedad** llamada `"-1"`, que no existe. Solo `at` cuenta desde el final.
+```js
+const qty = 3;
+const msg = `Tienes ${qty} ${qty === 1 ? "artículo" : "artículos"} (${(qty * 4.5).toFixed(2)} €)`;
+```
 
-`replace` con string reemplaza solo la primera aparición; para todas usa `replaceAll` o una regex con la bandera `g`.
+<AntesDeSeguir>
 
-### Ordenar con acentos y ñ
+¿Qué imprime?
 
-`sort()` sin comparador ordena por código UTF-16. En español eso es casi siempre incorrecto: mayúsculas antes que minúsculas y cualquier letra con tilde al final.
+```js
+const user = { name: "Ana" };
+console.log(`Hola, ${user.apellido}`, `${null}`, `${user}`);
+console.log("hola".slice(-2), "hola".substring(-2), "hola".substring(3, 1));
+```
+
+<Respuesta>
+
+```
+Hola, undefined null [object Object]
+la hola ol
+```
+
+Lo interpolado pasa por `String(valor)`: si ves `undefined`, `null` o `[object Object]` en la UI,
+estás interpolando algo que no es lo que crees.
+
+`slice` y `substring` extraen el tramo `[inicio, fin)`, pero `slice` acepta negativos (cuenta desde
+el final) y `substring` los trata como 0 y, si `inicio > fin`, los intercambia en silencio. Usa
+`slice` y olvídate del otro. Lo mismo con `at(-1)` frente a `[-1]`: los corchetes buscan una
+**propiedad** llamada `"-1"`, que no existe. Solo `at` cuenta desde el final.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+#### Ordenar casillas no es ordenar palabras
+
+`sort()` sin comparador ordena por el número de cada casilla (su código UTF-16). En español eso
+es casi siempre incorrecto: las mayúsculas van antes que las minúsculas y cualquier letra con
+tilde, al final. Esta pregunta compara los dos órdenes:
 
 <Pregunta id="strings-ordenar-acentos" />
 
-Para ordenar texto que lee una persona usa `localeCompare` con el idioma explícito, o `Intl.Collator` si vas a ordenar muchos elementos (crea el comparador una sola vez):
+Para ordenar texto que lee una persona usa `localeCompare` con el idioma explícito, o
+`Intl.Collator` si vas a ordenar muchos elementos (crea el comparador una sola vez):
 
 ```js
 users.toSorted((a, b) => a.name.localeCompare(b.name, "es"));
@@ -72,73 +182,159 @@ users.toSorted((a, b) => collator.compare(a.name, b.name));
 // sensitivity "base": "a", "A" y "á" se consideran iguales (útil para buscar)
 ```
 
-### length y emojis
+---
 
-Un string es una secuencia de **unidades UTF-16**, y `length` cuenta esas unidades, no los caracteres que ve el usuario. La mayoría de letras ocupan una, pero los emojis ocupan dos (o más: `"👍🏽".length` es 4, porque es un emoji más un modificador de tono).
+### Segunda capa: la regla de los números
+
+En la lección de tipos, un `number` era una moneda. Ábrela: dentro hay una **regla** con un número
+enorme pero finito de marcas. Cada `number` es exactamente una marca. **Entre dos marcas no hay
+nada**: cualquier valor que quieras guardar se pega a la marca más cercana.
+
+No hay enteros "de verdad": los enteros son doubles sin parte decimal, y caen justo en una marca.
+Las marcas están puestas en binario, así que caen exactas en fracciones como 1/2, 1/4 o 1/8. Pero
+`0.1` en binario es una fracción periódica (como 1/3 en decimal): no cae en ninguna marca y se
+guarda **aproximada**.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
 
 ```js
-"👍".length;        // 2
-[..."👍"].length;   // 1: el spread itera por code points
-"é".normalize("NFD").length; // 2: "e" + acento combinable
+console.log(0.1 + 0.2, 0.1 + 0.2 === 0.3);
+console.log(0.5 + 0.25 === 0.75, (0.1).toFixed(20));
 ```
 
-Consecuencias reales: un contador de "máximo 280 caracteres" que usa `length` penaliza los emojis, y un `slice(0, 10)` puede partir un emoji por la mitad y dejar un carácter roto. Si necesitas contar lo que el usuario percibe como caracteres, existe `Intl.Segmenter`; para el resto de casos, `length` está bien.
+<Respuesta>
 
-## Números
+```
+0.30000000000000004 false
+true 0.10000000000000000555
+```
 
-### Todo es un double
+`0.5` y `0.25` son marcas exactas (1/2 y 1/4), y su suma también. `0.1` se pega a la marca más
+cercana, que está un pelo por encima; `toFixed(20)` te deja ver ese pelo. Al sumar dos valores
+aproximados, el resultado se pega a una marca que no es la del `0.3`.
 
-JavaScript solo tiene un tipo numérico de uso general, `number`: coma flotante de 64 bits (IEEE 754). No hay enteros "de verdad"; los enteros son doubles sin parte decimal. Y en binario, `0.1` es una fracción periódica (como 1/3 en decimal), así que se guarda **aproximada**:
+No es un bug de JavaScript: Python, Java o C dan exactamente lo mismo, porque usan el mismo
+formato. Lo que cambia es cómo lo manejas.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+<Profundiza titulo="cuántas marcas tiene la regla">
+
+Un double tiene 64 bits: 1 para el signo, 11 para el exponente y 52 para la fracción (más un bit
+implícito, 53 de precisión). El exponente decide en qué tramo de la regla estás, y la fracción en
+qué marca de ese tramo. Cada tramo tiene la misma cantidad de marcas, pero cada uno mide el doble
+que el anterior: por eso las marcas están muy juntas cerca de 0 y se separan cuanto más lejos vas.
+Esa es la siguiente capa.
+
+</Profundiza>
+
+#### El dinero, en marcas enteras
+
+Si los enteros caen siempre en una marca, la regla práctica sale sola: **guarda y opera el dinero
+en la unidad mínima (céntimos) como entero**. Las sumas y multiplicaciones de enteros son exactas
+mientras no pasen de `Number.MAX_SAFE_INTEGER`. Conviertes a euros solo para mostrar.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
 
 ```js
-0.1 + 0.2;          // 0.30000000000000004
-0.1 + 0.2 === 0.3;  // false
-0.1 * 3;            // 0.30000000000000004
+console.log(4.35 * 7, 4.35 * 100);
+const centimos = Math.round(4.35 * 100) * 7;
+console.log(centimos, centimos / 100);
 ```
 
-No es un bug de JavaScript: Python, Java o C dan exactamente lo mismo. Lo que cambia es cómo lo manejas.
+<Respuesta>
 
-### Dinero: trabaja en enteros
+```
+30.449999999999996 434.99999999999994
+3045 30.45
+```
 
-La regla práctica: **guarda y opera el dinero en la unidad mínima (céntimos) como entero**. Las sumas y multiplicaciones de enteros son exactas mientras no pasen de `Number.MAX_SAFE_INTEGER`. Conviertes a euros solo para mostrar.
+Hasta la conversión a céntimos sale aproximada (`434.99…`), por eso `Math.round`. A partir de ahí
+solo hay enteros, y la división final se pega a la marca más cercana a `30.45`, que se imprime
+limpia.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 ```js
 const toCents = (amount) => Math.round(amount * 100); // 19.99 * 100 = 1998.9999999999998 → 1999
 const totalCents = items.reduce((t, i) => t + toCents(i.price) * i.qty, 0);
 ```
 
-Mejor aún si los céntimos vienen así desde la base de datos o la API (Stripe, por ejemplo, trabaja en la unidad mínima de cada moneda). Y si tienes que comparar decimales que vienen de cálculos, no uses `===`: compara con una tolerancia. `Number.EPSILON` (unos 2.2e-16) es la distancia entre 1 y el siguiente double; sirve como tolerancia para valores cercanos a 1, pero para cantidades grandes necesitas una tolerancia proporcional al valor.
+Mejor aún si los céntimos vienen así desde la base de datos o la API (Stripe, por ejemplo, trabaja
+en la unidad mínima de cada moneda). Y si tienes que comparar decimales que vienen de cálculos, no
+uses `===`: compara con una tolerancia. `Number.EPSILON` (unos 2.2e-16) es la distancia entre 1 y
+la marca siguiente; sirve como tolerancia para valores cercanos a 1, pero para cantidades grandes
+necesitas una tolerancia proporcional al valor (las marcas están más separadas). Esta pregunta
+mezcla `toFixed`, la tolerancia y la suma en céntimos:
 
 <Pregunta id="numeros-tofixed-epsilon" />
 
 <Callout type="cuidado">
-`toFixed` **devuelve un string**. `price.toFixed(2) + shipping` concatena en vez de sumar. Úsalo solo en el último paso, para mostrar, y nunca para redondear valores con los que vas a seguir calculando. Además redondea sobre el valor binario real: `(1.005).toFixed(2)` es `"1.00"`, porque 1.005 se guarda como 1.00499999…
+`toFixed` **devuelve un string**. `price.toFixed(2) + shipping` concatena en vez de sumar. Úsalo solo en el último paso, para mostrar, y nunca para redondear valores con los que vas a seguir calculando. Además redondea sobre el valor real de la marca: `(1.005).toFixed(2)` es `"1.00"`, porque 1.005 se guarda como 1.00499999…
 </Callout>
 
-### NaN e Infinity
+#### Dos marcas raras: NaN e Infinity
 
-- `NaN` ("not a number") es un `number` que resulta de operaciones sin sentido: `Number("abc")`, `0 / 0`, `undefined + 1`. Es **contagioso** (casi cualquier operación aritmética con `NaN` da `NaN`) y es el único valor que no es igual a sí mismo: `NaN === NaN` es `false`. Compruébalo con `Number.isNaN(x)`, no con `isNaN(x)` global, que convierte primero (`isNaN("abc")` es `true`).
-- `1 / 0` es `Infinity`, no un error. Si un porcentaje muestra "Infinity %", dividiste entre un total de 0.
+- `NaN` ("not a number") es un `number` que resulta de operaciones sin sentido: `Number("abc")`,
+  `0 / 0`, `undefined + 1`. Es **contagioso** (casi cualquier operación aritmética con `NaN` da
+  `NaN`) y es el único valor que no es igual a sí mismo: `NaN === NaN` es `false`. Compruébalo con
+  `Number.isNaN(x)`, no con `isNaN(x)` global, que convierte primero (`isNaN("abc")` es `true`).
+- `1 / 0` es `Infinity`, no un error. Si un porcentaje muestra "Infinity %", dividiste entre un
+  total de 0.
 
-Un `NaN` en React suele verse como un "NaN" en pantalla o un input que se queda vacío: la pista es que algún `Number(...)` recibió `undefined` o un string con formato (`"1,5"`, `"12 €"`).
+Un `NaN` en React suele verse como un "NaN" en pantalla o un input que se queda vacío: la pista es
+que algún `Number(...)` recibió `undefined` o un string con formato (`"1,5"`, `"12 €"`).
 
-### Number() vs parseInt / parseFloat
+#### De la cinta del texto a la regla
 
-Son dos filosofías distintas:
+Pasar un string a número es leer una cinta y buscar su marca. Hay dos filosofías:
 
-- `Number(str)` exige que **todo** el string sea un número (admite espacios alrededor y notación científica). Si no, `NaN`. Ojo: `Number("")` y `Number(null)` dan `0`, no `NaN`, así que un input vacío se convierte en 0 sin avisar.
-- `parseInt(str, radix)` y `parseFloat(str)` leen **desde el principio** mientras encuentren dígitos válidos y descartan el resto: `parseInt("42px")` es 42, `parseFloat("3.14abc")` es 3.14.
+- `Number(str)` exige que **todo** el string sea un número (admite espacios alrededor y notación
+  científica). Si no, `NaN`. Ojo: `Number("")` y `Number(null)` dan `0`, no `NaN`, así que un input
+  vacío se convierte en 0 sin avisar.
+- `parseInt(str, radix)` y `parseFloat(str)` leen **desde el principio** mientras encuentren
+  dígitos válidos y descartan el resto: `parseInt("42px")` es 42, `parseFloat("3.14abc")` es 3.14.
+  El segundo argumento de `parseInt` es la base (*radix*): `parseInt("101", 2)` es 5.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
 
 ```js
-parseInt("101", 2);    // 5: el segundo argumento es la base (radix)
-parseInt("08");        // 8 (en motores antiguos podía interpretarse como octal)
-parseInt(0.0000005);   // 5 (!): el número se convierte primero a "5e-7"
-["1", "2", "3"].map(parseInt); // [1, NaN, NaN]: map pasa (valor, índice) y el índice actúa como radix
+console.log(["1", "2", "3"].map(parseInt).join(" "));
+console.log(parseInt("42px", 10), Number("42px"), parseInt(0.0000005));
 ```
 
-Pasa siempre el radix (`parseInt(x, 10)`) y no le pases números. Para validar un formulario, `Number()` es más estricto y suele ser lo que quieres; `parseInt` es para extraer un número del principio de un texto. Si necesitas saber si es entero, `Number.isInteger(x)` (que no convierte: `Number.isInteger("5")` es `false`).
+<Respuesta>
 
-### Redondear con negativos
+```
+1 NaN NaN
+42 NaN 5
+```
+
+`map` pasa `(valor, índice)`, y el índice acaba como radix: `parseInt("2", 1)` y `parseInt("3", 2)`
+no tienen sentido y dan `NaN`. Y `parseInt(0.0000005)` convierte primero el número a string, que es
+`"5e-7"`, y lee hasta la `e`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Pasa siempre el radix (`parseInt(x, 10)`; `parseInt("08")` da 8 hoy, pero en motores antiguos
+podía interpretarse como octal) y no le pases números. Para validar un formulario, `Number()` es
+más estricto y suele ser lo que quieres; `parseInt` es para extraer un número del principio de un
+texto. Si necesitas saber si es entero, `Number.isInteger(x)`, que no convierte:
+`Number.isInteger("5")` es `false`.
+
+Y al volver de la regla a un entero, cuidado con los negativos:
 
 ```js
 Math.round(-2.5);  // -2: redondea los .5 hacia +∞, no "alejándose de cero"
@@ -147,63 +343,173 @@ Math.ceil(-2.5);   // -2: siempre hacia arriba
 Math.trunc(-2.5);  // -2: quita los decimales
 ```
 
-Con positivos `floor` y `trunc` coinciden, y por eso se intercambian sin pensar. Con negativos no: si calculas "días restantes" o una página a partir de una diferencia que puede ser negativa, elige a propósito.
+Con positivos `floor` y `trunc` coinciden, y por eso se intercambian sin pensar. Con negativos no:
+si calculas "días restantes" o una página a partir de una diferencia que puede ser negativa, elige
+a propósito. Esta pregunta repasa la conversión, el redondeo y el límite de la regla que viene a
+continuación:
 
 <Pregunta id="numeros-parse-redondeo" />
 
-### Enteros grandes y BigInt
+---
 
-Un double representa exactamente todos los enteros hasta `Number.MAX_SAFE_INTEGER` (2^53 − 1, unos 9000 billones). Por encima, se saltan valores: `2 ** 53 + 1 === 2 ** 53` es `true`. El caso real: IDs de 64 bits (Twitter/X, Discord, algunas bases de datos) que llegan como número en un JSON y se corrompen en silencio al parsearlos. Por eso esas APIs los envían como **string**.
+### Tercera capa: la regla se estira
 
-Para aritmética entera arbitraria existe `BigInt` (`10n`, `BigInt("9007199254740993")`), pero no se mezcla con `number` (`1n + 1` lanza `TypeError`) y `JSON.stringify` lanza un `TypeError` si encuentra uno. En apps normales lo más habitual es tratar esos IDs como strings.
+Como viste en el recuadro de arriba, las marcas se separan cuanto más lejos vas. Hasta
+`Number.MAX_SAFE_INTEGER` (2^53 − 1, unos 9000 billones) hay una marca en **cada** entero. Más
+allá, las marcas se saltan enteros: `2 ** 53 + 1 === 2 ** 53` es `true`.
 
-## Fechas
+<AntesDeSeguir>
 
-### Un Date es un instante
-
-Un `Date` guarda **un solo número**: milisegundos desde el 1 de enero de 1970 a las 00:00 UTC (el *timestamp*, que obtienes con `getTime()` o `Date.now()`). No guarda zona horaria. Los métodos `getHours()`, `getDate()`, `toLocaleString()`… interpretan ese instante **en la zona del entorno** donde se ejecutan; los `getUTC*()` y `toISOString()` lo interpretan en UTC.
-
-Las trampas clásicas:
+Una API devuelve un ID de 64 bits como número. ¿Qué imprime?
 
 ```js
-new Date(2026, 9, 14);   // 14 de OCTUBRE: los meses van de 0 a 11 (los días no)
-new Date(Date.UTC(2026, 9, 14)); // mismo día, pero medianoche UTC en vez de local
+const respuesta = '{"id": 1234567890123456789}';
+console.log(JSON.parse(respuesta).id);
+console.log(2 ** 53 === 2 ** 53 + 1);
+console.log(String(BigInt("1234567890123456789") + 1n));
+```
 
+<Respuesta>
+
+```
+1234567890123456800
+true
+1234567890123456790
+```
+
+`JSON.parse` pega el ID a la marca más cercana, y el ID cambia **en silencio**. Es el caso real de
+los IDs de 64 bits (Twitter/X, Discord, algunas bases de datos): por eso esas APIs los envían como
+**string**. `BigInt`, en cambio, es una cinta sin final: aritmética entera exacta de cualquier
+tamaño.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+`BigInt` (`10n`, `BigInt("9007199254740993")`) no se mezcla con `number` (`1n + 1` lanza
+`TypeError`) y `JSON.stringify` lanza un `TypeError` si encuentra uno. En apps normales lo más
+habitual es tratar esos IDs como strings.
+
+---
+
+### Cuarta capa: la cinta del tiempo
+
+Ahora la regla más larga: una en la que cada marca es **un milisegundo**, y el 0 es el 1 de enero
+de 1970 a las 00:00 UTC. Un `Date` es **una sola marca** en esa regla, un número (el *timestamp*,
+que obtienes con `getTime()` o `Date.now()`). No guarda zona horaria.
+
+La zona horaria la pone **quien lee**. Los métodos `getHours()`, `getDate()`, `toLocaleString()`…
+imprimen la etiqueta **en la zona del entorno** donde se ejecutan; los `getUTC*()` y
+`toISOString()` la imprimen en UTC.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const pedido = new Date(Date.UTC(2026, 9, 14, 3, 0));
+const ver = (timeZone) =>
+  pedido.toLocaleString("es-ES", { timeZone, dateStyle: "short", timeStyle: "short" });
+console.log(pedido.getTime());
+console.log(ver("UTC"));
+console.log(ver("America/Mexico_City"));
+console.log(ver("Asia/Tokyo"));
+```
+
+<Respuesta>
+
+```
+1791946800000
+14/10/26, 3:00
+13/10/26, 21:00
+14/10/26, 12:00
+```
+
+Una marca, tres etiquetas. Fíjate en el `9`: los meses van de **0 a 11** (los días no), herencia
+directa de Java. Y en México, la etiqueta ya es del día anterior.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+`Date.UTC(2026, 9, 14)` da la medianoche UTC del 14 de octubre; `new Date(2026, 9, 14)` da la
+medianoche **local**, que es otra marca según dónde se ejecute. Con strings pasa algo parecido, y
+es la trampa del ticket:
+
+```js
 new Date("2026-10-14");        // solo fecha → se interpreta como UTC
 new Date("2026-10-14T00:00");  // fecha y hora sin zona → se interpreta como hora LOCAL
 new Date("2026-10-14T00:00Z"); // con Z (u offset como -06:00) → instante exacto
 ```
 
-Esa diferencia entre "solo fecha" (UTC) y "fecha con hora" (local) es una decisión histórica del estándar, y es la causa de muchos bugs de "el día anterior". Otros formatos (`"14/10/2026"`, `"Oct 14 2026"`) dependen del motor: no los parsees con `Date`.
+Esa diferencia entre "solo fecha" (UTC) y "fecha con hora" (local) es una decisión histórica del
+estándar, y la causa de muchos bugs de "el día anterior". Otros formatos (`"14/10/2026"`,
+`"Oct 14 2026"`) dependen del motor: no los parsees con `Date`.
 
-### Date es mutable
+<AntesDeSeguir>
 
-Los setters (`setMonth`, `setDate`, `setHours`…) **modifican el objeto**. Si dos variables apuntan al mismo `Date`, cambiar una cambia la otra; y si mutas un `Date` que está en el estado de React, el componente no se entera (es el mismo objeto). Copia antes de modificar: `new Date(fecha)` o `new Date(fecha.getTime())`.
+¿Qué imprime?
 
-Además, los setters **desbordan** en lugar de fallar: el día 32 pasa al mes siguiente, el día 0 es el último del mes anterior, y "31 de enero + 1 mes" no es 28 de febrero.
+```js
+const a = new Date("2026-10-14");
+const b = new Date("2026-10-14T00:00:00Z");
+const c = new Date(Date.UTC(2026, 10, 14));
+console.log(a.getTime() === b.getTime());
+console.log(c.toISOString().slice(0, 10));
+```
+
+<Respuesta>
+
+```
+true
+2026-11-14
+```
+
+El string de solo fecha es la medianoche UTC, la misma marca que con `Z`. Y el mes 10 es
+**noviembre**.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+#### Una marca que se mueve sola
+
+Lo peor que heredó `Date` de Java: es **mutable**. Los setters (`setMonth`, `setDate`,
+`setHours`…) mueven la marca del propio objeto. Si dos variables apuntan al mismo `Date`, cambiar
+una cambia la otra; y si mutas un `Date` que está en el estado de React, el componente no se entera
+(es el mismo objeto). Copia antes de modificar: `new Date(fecha)` o `new Date(fecha.getTime())`.
+
+Además, los setters **desbordan** en lugar de fallar: el día 32 pasa al mes siguiente, el día 0 es
+el último del mes anterior (`Date.UTC(2026, 2, 0)` es el 28 de febrero) y "31 de enero + 1 mes" no
+es 28 de febrero. Esta pregunta junta las dos cosas, la mutación compartida y el desborde:
 
 <Pregunta id="fechas-mutable-desborde" />
 
-### El bug del día anterior
+#### Instantes y fechas de calendario
 
-Vuelve al componente `Cita`. `"2026-10-14"` se interpreta como **medianoche UTC**. Para un usuario en México (UTC−6), ese instante son las 18:00 del día **13**. `toLocaleDateString()` usa la zona del entorno, así que muestra el 13. En tu máquina en España (UTC+2) se veía el 14 y nadie lo notó.
+Y aquí está la idea que más bugs evita. No todo lo que parece una fecha es una marca en la regla:
 
-<Pregunta id="fechas-dia-anterior" />
-
-La solución depende de qué representa el dato:
-
-- **Una fecha de calendario** (cumpleaños, fecha de una cita, "vence el 14"): no es un instante, no tiene zona. Lo más sencillo es tratarla como string `"YYYY-MM-DD"` y, cuando necesites `Date`, hacer todo en UTC: parsear como solo fecha, usar `getUTC*`/`setUTC*` y formatear con `timeZone: "UTC"`.
-- **Un instante** (cuándo se hizo un pedido, cuándo se envió un mensaje): guárdalo en UTC (ISO con `Z` o timestamp) y conviértelo a la zona del usuario **solo al mostrarlo**.
+- **Un instante** (cuándo se hizo un pedido, cuándo se envió un mensaje) sí es una marca. Guárdalo
+  en UTC (ISO con `Z` o timestamp) y conviértelo a la zona del usuario **solo al mostrarlo**.
+- **Una fecha de calendario** (cumpleaños, fecha de una cita, "vence el 14") no es un instante, no
+  tiene zona: es una etiqueta. Lo más sencillo es tratarla como string `"YYYY-MM-DD"` y, cuando
+  necesites `Date`, hacer todo en UTC: parsear como solo fecha, usar `getUTC*`/`setUTC*` y
+  formatear con `timeZone: "UTC"`.
 
 <Callout type="clave">
 Antes de tocar una fecha, pregúntate si es un **instante** o una **fecha de calendario**. Mezclarlos es el origen de casi todos los bugs de zonas horarias.
 </Callout>
 
-Y cuidado con calcular días restando fechas creadas a medianoche local: un cambio de horario de verano hace que un "día" dure 23 o 25 horas. Usa fechas a medianoche UTC o redondea el resultado.
+Y cuidado con calcular días restando fechas creadas a medianoche local: un cambio de horario de
+verano hace que un "día" dure 23 o 25 horas. Usa fechas a medianoche UTC o redondea el resultado.
 
-## Intl: formatear para personas
+---
 
-`Intl` formatea según el idioma y las convenciones de cada país, sin librerías. Crea el formateador una vez y reutilízalo; y pasa siempre el **locale** de forma explícita, porque si no usa el del entorno (el servidor o el navegador).
+### Quinta capa: imprimir etiquetas para personas
+
+La última pieza es la impresora de etiquetas: `Intl`. Formatea según el idioma y las convenciones
+de cada país, sin librerías. Crea el formateador una vez y reutilízalo; y pasa siempre el
+**locale** de forma explícita, porque si no usa el del entorno (el servidor o el navegador).
 
 ```js
 const eur = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
@@ -227,40 +533,127 @@ pr.select(1); // "one"
 pr.select(5); // "other": eliges "artículo" o "artículos" según la categoría
 ```
 
-Dos detalles prácticos:
+`RelativeTimeFormat` no calcula la diferencia: le das tú el número y la unidad ("hace 3 días" lo
+decides tú restando fechas).
 
-- Algunos locales usan **espacios especiales** (U+00A0 o U+202F, sin salto de línea) entre el número y el símbolo, o antes de "p.m.". Visualmente son espacios, pero `"19,99 €" === eur.format(19.99)` puede dar `false`. En tests, normaliza con `.replace(/\s/g, " ")` o usa `formatToParts`.
-- `RelativeTimeFormat` no calcula la diferencia: le das tú el número y la unidad ("hace 3 días" lo decides tú restando fechas).
+<AntesDeSeguir>
 
-### Hydration mismatch en Next.js
+Un test compara el precio formateado. ¿Qué imprime?
 
-En Next.js un Client Component se renderiza **dos veces**: en el servidor (para generar el HTML) y en el navegador (al hidratar). Si formateas una fecha sin locale ni zona, cada entorno usa los suyos. Un servidor suele ejecutarse en UTC y en `en-US`; el navegador del usuario, en `America/Mexico_City` y `es-MX`. Los textos no coinciden y React avisa con un error de hidratación.
+```js
+const eur = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
+console.log(eur.format(19.99) === "19,99 €");
+console.log(eur.format(19.99).replace(/\s/g, " ") === "19,99 €");
+```
+
+<Respuesta>
+
+```
+false
+true
+```
+
+Algunos locales usan **espacios especiales** (U+00A0 o U+202F, sin salto de línea) entre el número
+y el símbolo, o antes de "p.m.". Visualmente son espacios, pero no son el carácter que escribiste.
+En tests, normaliza con `.replace(/\s/g, " ")` o usa `formatToParts`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+#### Dos impresoras, dos etiquetas: hydration mismatch
+
+En Next.js un Client Component se renderiza **dos veces**: en el servidor (para generar el HTML) y
+en el navegador (al hidratar). Son dos impresoras leyendo la misma marca. Si formateas una fecha
+sin locale ni zona, cada una usa los suyos: un servidor suele ejecutarse en UTC y en `en-US`; el
+navegador del usuario, en `America/Mexico_City` y `es-MX`. Las etiquetas no coinciden y React
+avisa con un error de hidratación. Esta pregunta te pide elegir el arreglo que de verdad iguala las
+dos:
 
 <Pregunta id="fechas-hydration-mismatch" />
 
 Las salidas que tienes:
 
-- **Fijar locale y zona** en el formateador (la zona del negocio, o la del usuario si la guardas en su perfil): servidor y cliente producen lo mismo.
-- **Formatear solo en el cliente**, aceptando que el servidor muestre algo provisional; la guía de Next.js sobre *preventing flash before hydration* explica cómo corregirlo antes del primer pintado con un script inline.
-- Para probar en local, arranca el servidor con otra zona: `TZ=UTC next dev` mientras tu navegador está en tu zona real. Si solo lo pruebas en tu máquina, el bug no aparece nunca.
+- **Fijar locale y zona** en el formateador (la zona del negocio, o la del usuario si la guardas en
+  su perfil): servidor y cliente producen lo mismo.
+- **Formatear solo en el cliente**, aceptando que el servidor muestre algo provisional; la guía de
+  Next.js sobre *preventing flash before hydration* explica cómo corregirlo antes del primer
+  pintado con un script inline.
+- Para probar en local, arranca el servidor con otra zona: `TZ=UTC next dev` mientras tu navegador
+  está en tu zona real. Si solo lo pruebas en tu máquina, el bug no aparece nunca.
 
-### Temporal
+<Profundiza titulo="Temporal, el reemplazo de Date">
 
-`Date` tiene más de 30 años y arrastra decisiones que hoy nadie tomaría (mutable, meses desde 0, una sola clase para instantes y fechas de calendario). **Temporal** es la API que lo sustituye, con tipos separados como `Temporal.PlainDate` (fecha de calendario) o `Temporal.ZonedDateTime` (instante con zona), todos inmutables. Ya está disponible en algunos navegadores, pero no en Node 22; mientras no puedas contar con ella en todos tus entornos, aplica las reglas de esta lección con `Date` e `Intl` (o usa una librería como date-fns).
+`Date` tiene más de 30 años y arrastra decisiones que hoy nadie tomaría: es mutable, cuenta los
+meses desde 0 y usa una sola clase para instantes y fechas de calendario. **Temporal** es la API que
+lo sustituye, con tipos separados como `Temporal.PlainDate` (fecha de calendario) o
+`Temporal.ZonedDateTime` (instante con zona), todos inmutables. Es justo la distinción de esta
+lección, convertida en tipos.
 
-## Práctica
+Según la tabla de compatibilidad de MDN (octubre de 2026), ya está en Firefox (139+), Chrome y Edge
+(144+) y Node.js 26, pero Safari solo la tiene en su versión de pruebas, así que todavía no es
+*Baseline*. Tampoco está en Node 22, el que asume esta lección. Mientras no puedas contar con ella
+en todos tus entornos, aplica estas reglas con `Date` e `Intl` (o usa una librería como date-fns).
+
+</Profundiza>
+
+---
+
+## El ticket #304, resuelto
+
+**¿Por qué `0.1 + 0.2` no da `0.3`?** Porque `0.1` y `0.2` no caen en ninguna marca de la regla
+binaria: se guardan aproximados, y su suma se pega a la marca de `0.30000000000000004`. El arreglo
+es trabajar en céntimos enteros, que siempre caen en una marca, y convertir a euros solo al
+imprimir la etiqueta con `Intl.NumberFormat`.
+
+**¿Por qué un emoji cuenta como dos?** Porque `length` cuenta casillas de 16 bits, y el 👍 no cabe
+en una: es un par subrogado. `"ok 👍👍👍".length` es 9. Si el límite es para personas, cuenta con
+`[...nota].length` o, para casos como `"👍🏽"`, con `Intl.Segmenter`.
+
+**¿Por qué la cita sale un día antes, solo en México?** `"2026-10-14"` se interpreta como
+**medianoche UTC**. Para un usuario en México (UTC−6), esa marca son las 18:00 del día **13**.
+`toLocaleDateString()` imprime la etiqueta en la zona del entorno, así que muestra el 13. En tu
+máquina en España (UTC+2) se veía el 14 y nadie lo notó. Esta pregunta reproduce el bug con las
+dos zonas a la vez:
+
+<Pregunta id="fechas-dia-anterior" />
+
+La raíz es que una cita es una **fecha de calendario**, no un instante: trátala como string o haz
+todo en UTC, también al formatear (`timeZone: "UTC"`).
+
+**¿Cómo mostrarla sin hydration mismatch?** Con locale y zona explícitos en el formateador, para
+que el servidor y el navegador impriman la misma etiqueta; o formateando solo en el cliente.
+
+---
+
+## Práctica: cerrar el #304
+
+Primero el carrito. Este ejercicio pone a prueba la regla de los números: sumar en céntimos enteros
+sin que se cuele un decimal, y formatear al final con `Intl.NumberFormat` para cualquier moneda y
+locale:
 
 <Ejercicio id="numeros-carrito-centimos" />
 
+Después, el blog de la tienda, donde se juntan las cintas del texto y del tiempo. Este ejercicio
+pone a prueba que limpies strings con `normalize` y que calcules con fechas de calendario en UTC,
+de forma que el resultado no dependa de la zona de la máquina ni de los cambios de horario:
+
 <Ejercicio id="strings-slug-fechas-utc" />
 
-## Resumen
+---
 
-- Los strings son **inmutables**: sus métodos devuelven strings nuevos. Usa `slice`, `at(-1)`, `replaceAll` y ordena texto con `localeCompare`/`Intl.Collator` y un locale explícito.
-- `length` cuenta unidades UTF-16: un emoji puede valer 2 o más.
-- Todos los números son doubles: `0.1 + 0.2 !== 0.3`. El dinero se opera en **céntimos enteros** y se formatea al final.
-- `toFixed` devuelve un string; `Number("")` es 0; `parseInt` lee hasta donde puede (pasa el radix); `round`, `floor` y `trunc` difieren con negativos.
-- Por encima de `MAX_SAFE_INTEGER` los enteros pierden precisión: los IDs grandes van como string (o `BigInt`).
-- Un `Date` es un instante en UTC; los meses van de 0 a 11 y los setters mutan y desbordan.
-- `"2026-10-14"` es medianoche UTC; mostrarla en una zona al oeste de UTC da el **día anterior**. Distingue instantes de fechas de calendario.
-- `Intl` formatea monedas, porcentajes, fechas, tiempos relativos y plurales. Pasa siempre locale y `timeZone` explícitos, sobre todo en código que se renderiza en servidor y cliente.
+## Lo que ahora puedes explicar
+
+Cuando veas `0.30000000000000004`, un emoji que cuenta doble o una fecha que retrocede un día, ya
+no es magia: es la distancia entre lo que se guarda y lo que se ve. Sabes que un string es una
+cinta de casillas UTF-16 que no se puede reescribir, que un `number` es una marca en una regla con
+huecos que se agrandan (y por qué los IDs grandes viajan como string), y que un `Date` es una sola
+marca en la regla del tiempo cuya etiqueta depende de quién la lee.
+
+Sabes por qué todo eso es así: tres decisiones de 1995 que la web no deja deshacer. Y sabes
+distinguir un instante de una fecha de calendario, que es la pregunta que evita casi todos los bugs
+de zonas horarias.
+
+Hasta ahora has trabajado con valores sueltos: una casilla, una marca. La siguiente lección los
+agrupa en estructuras (objetos y arrays) y los manda por la red como JSON, donde ya viste el primer
+aviso: lo que viaja como texto y lo que llega a tu código no siempre es lo mismo.

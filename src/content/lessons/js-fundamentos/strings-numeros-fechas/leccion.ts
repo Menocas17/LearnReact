@@ -8,9 +8,9 @@ export const stringsNumerosFechas: LessonDef = {
   slug: "strings-numeros-fechas",
   title: "Strings, números y fechas",
   summary:
-    "Por qué un carrito suma 0.30000000000000004 y una fecha sale con el día anterior en producción: strings inmutables, coma flotante, Date, zonas horarias e Intl.",
+    "Un ticket con tres síntomas (un total con 17 decimales, un emoji que cuenta doble y una cita que sale el día anterior) para entender la distancia entre lo que JavaScript guarda y lo que muestra: strings UTF-16, doubles, BigInt, Date, zonas horarias e Intl.",
   concepts: ["js.strings", "js.numeros", "js.fechas-intl"],
-  minutes: 45,
+  minutes: 55,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
