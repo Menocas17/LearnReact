@@ -38,6 +38,7 @@ export const valoresYReferencias: LessonDef = {
     { title: "MDN: structuredClone()", url: "https://developer.mozilla.org/en-US/docs/Web/API/Window/structuredClone" },
     { title: "MDN: Object.freeze()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze" },
     { title: "MDN: Array.prototype.toSorted()", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Global_Objects/Array/toSorted" },
+    { title: "TC39: propuesta Record & Tuple (retirada)", url: "https://github.com/tc39/proposal-record-tuple" },
     { title: "react.dev: Actualizar objetos en el estado", url: "https://es.react.dev/learn/updating-objects-in-state" },
     { title: "react.dev: Actualizar arrays en el estado", url: "https://es.react.dev/learn/updating-arrays-in-state" },
     { title: "react.dev: useEffect — eliminar dependencias de objetos innecesarias", url: "https://es.react.dev/reference/react/useEffect#removing-unnecessary-object-dependencies" },

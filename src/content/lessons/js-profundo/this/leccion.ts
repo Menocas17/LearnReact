@@ -37,6 +37,8 @@ export const thisLesson: LessonDef = {
     { title: "MDN: Funciones flecha", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Functions/Arrow_functions" },
     { title: "MDN: Modo estricto", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Strict_mode" },
     { title: "MDN: EventTarget.addEventListener() (el valor de this)", url: "https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#the_value_of_this_within_the_handler" },
+    { title: "React (docs heredadas): React sin ES6 (autobinding de createReactClass)", url: "https://legacy.reactjs.org/docs/react-without-es6.html" },
+    { title: "React (docs heredadas): Introducing Hooks (motivación)", url: "https://legacy.reactjs.org/docs/hooks-intro.html#classes-confuse-both-people-and-machines" },
     { title: "react.dev: Component (API de clases heredada)", url: "https://es.react.dev/reference/react/Component" },
   ],
   reviewed: { date: "2026-10-12", versions: { node: "22", react: "19.3" } },

@@ -40,7 +40,7 @@ No es magia: son dos reglas muy concretas: **dónde vive cada variable**
 
 ## Dos épocas de un mismo lenguaje
 
-Hasta ES2015, el estándar de JavaScript tenía una sola forma de declarar variables: `var`. Y
+Hasta ES2015, el estándar de JavaScript tenía una sola palabra para declarar variables: `var`. Y
 `var` no conoce los bloques: una variable declarada dentro de un `if` o un `for` pertenece a la
 **función entera**. Las llaves agrupaban instrucciones, pero no creaban un espacio propio para
 variables.
@@ -53,35 +53,37 @@ valor de partida más pobre: `undefined`.
 
 Con ES2015 (la edición antes llamada ES6) llegaron `let`, `const` y
 `class`, con scope de **bloque**. También se registran antes, pero el comité tuvo que decidir
-qué pasa si alguien las usa antes de su línea. Repetir lo de `var` habría sido fácil, pero
-piensa en lo que significaría para una `const`: tendría **dos** valores a lo largo de su vida,
-`undefined` y el de verdad, y una constante que cambia de valor no es una constante. Se eligió lo
-contrario: usarlas antes de tiempo **lanza un error**. Ese tramo prohibido es la **TDZ**, y es
-exactamente lo que te encontraste el viernes.
+qué pasa si alguien las usa antes de su línea. Se discutieron varias opciones, y una de las
+razones que pesaron fue `const`: si se leyera como `undefined` antes de su línea, como un `var`,
+tendría **dos** valores a lo largo de su vida, y una constante que cambia de valor no es una
+constante. Se eligió que usarlas antes de tiempo **lance un error**, y `let` sigue la misma regla
+para que cambiar una por otra no altere el comportamiento. Ese tramo prohibido es la **TDZ**, y
+es exactamente lo que te encontraste el viernes.
 
 ---
 
-## Las salas y sus casilleros
+## Las habitaciones y sus casilleros
 
-Para el resto de la lección, piensa en el programa como un edificio de
-**salas**, unas dentro de otras: el módulo es la sala grande, cada función es una sala dentro de
-ella, y cada bloque `{ … }` es un cubículo dentro de una sala.
+Vuelve a las **habitaciones** de la lección **Closures**: cada llamada a una función construye
+una, con una puerta que da a la habitación donde la función se escribió. Ahora mira el plano
+completo del edificio. Las habitaciones están unas dentro de otras: el módulo es la habitación
+grande, cada función es una habitación dentro de ella, y cada bloque `{ … }` es un cubículo, una
+habitación pequeña dentro de otra.
 
-Cada variable es un **casillero con una etiqueta** que está en una sala concreta. Eso es el
-**scope**: la región del código donde un identificador es visible. Hay tres niveles que te
-importan:
+Dentro de cada habitación, cada variable es un **casillero con una etiqueta**. La región del
+código donde ese casillero se puede alcanzar es su **scope**. Hay tres niveles que te importan:
 
 - **Global** (o de módulo): lo declarado en el nivel superior del archivo. En un módulo ES, cada
-  archivo tiene su propia sala; lo que no exportas no lo ve nadie más.
-- **De función**: cada función crea una sala con sus parámetros y variables.
+  archivo tiene su propia habitación; lo que no exportas no lo ve nadie más.
+- **De función**: cada función crea una habitación con sus parámetros y variables.
 - **De bloque**: cada `{ … }` (de un `if`, un `for` o un bloque suelto) crea un cubículo para las
   variables declaradas con `let`, `const` y `class`.
 
 ```js
-const app = "tienda";          // sala del módulo
+const app = "tienda";          // habitación del módulo
 
-function checkout(items) {     // items: sala de la función
-  const total = items.length;  // sala de la función
+function checkout(items) {     // items: habitación de la función
+  const total = items.length;  // habitación de la función
   if (total > 0) {
     const mensaje = "ok";      // cubículo del if
   }
@@ -91,12 +93,12 @@ function checkout(items) {     // items: sala de la función
 
 ### Buscar un casillero
 
-Cuando el código usa un nombre, JavaScript busca un casillero con esa etiqueta en la sala
-actual; si no está, sale a la sala que la **contiene en el plano**, es decir, en el texto del
-programa, y así hasta el módulo y el global. Si no lo encuentra en ninguna, lanza
+Cuando el código usa un nombre, JavaScript busca un casillero con esa etiqueta en la habitación
+actual; si no está, sale por la puerta a la habitación que la **contiene en el plano**, es decir,
+en el texto del programa, y así hasta el módulo y el global. Si no lo encuentra en ninguna, lanza
 `ReferenceError: x is not defined`. Que el recorrido dependa de dónde está **escrito** el código
-y no de quién lo llama es lo que significa **scope léxico**: es la misma búsqueda que hace
-funcionar los closures de la lección anterior.
+y no de quién lo llama es el **scope léxico** que viste en **Closures**: las puertas siguen el
+plano.
 
 <AntesDeSeguir>
 
@@ -120,9 +122,9 @@ console.log(pantalla());
 claro
 ```
 
-La sala de `leerTema` está escrita dentro del módulo, no dentro de `pantalla`. Al no encontrar
-`tema` en su sala, `leerTema` sale a la del módulo. El casillero `tema` de `pantalla` está en
-otra sala por la que la búsqueda nunca pasa, aunque sea `pantalla` quien llama.
+`leerTema` está escrita en el módulo, no dentro de `pantalla`, así que la puerta de su
+habitación da al módulo. Al no encontrar `tema` dentro, `leerTema` sale por esa puerta. El casillero `tema` de `pantalla` está en
+otra habitación por la que la búsqueda nunca pasa, aunque sea `pantalla` quien llama.
 
 </Respuesta>
 
@@ -130,7 +132,7 @@ otra sala por la que la búsqueda nunca pasa, aunque sea `pantalla` quien llama.
 
 ### Dos casilleros con la misma etiqueta
 
-Si una sala interna declara un nombre que ya existe fuera, el casillero interno **tapa** al
+Si una habitación interna declara un nombre que ya existe fuera, el casillero interno **tapa** al
 externo dentro de su región: es el **shadowing**. La búsqueda se detiene en el primero que
 encuentra.
 
@@ -147,7 +149,7 @@ Es legal, pero es fuente de bugs cuando no te das cuenta (por ejemplo, un parám
 
 ### var atraviesa los tabiques
 
-`var` es de la primera época, e **ignora los cubículos**: su casillero se coloca en la sala de
+`var` es de la primera época, e **ignora los cubículos**: su casillero se coloca en la habitación de
 la función entera (o del módulo, si está en el nivel superior), aunque la escribas dentro de un
 `if` o un `for`. Esta pregunta pone a prueba justo esa diferencia entre `var` y `let`:
 
@@ -180,10 +182,10 @@ f();
 2 1
 ```
 
-El `var x` del bloque **no crea un casillero nuevo**: ya hay uno con esa etiqueta en la sala de
+El `var x` del bloque **no crea un casillero nuevo**: ya hay uno con esa etiqueta en la habitación de
 `f`, y es el mismo. Asignarle `2` pisa el de fuera. El `let y` del bloque, en cambio, pone un
 casillero nuevo en el cubículo (shadowing) que desaparece al cerrarlo. Y si intentaras redeclarar
-con `let` en la misma sala (`let y = 1; let y = 2;`), ni siquiera llegaría a ejecutarse: es un
+con `let` en la misma habitación (`let y = 1; let y = 2;`), ni siquiera llegaría a ejecutarse: es un
 `SyntaxError`.
 
 </Respuesta>
@@ -196,9 +198,10 @@ En código moderno (y en cualquier proyecto de React) usa `const` por defecto y 
 
 ---
 
-## Antes de abrir la sala: el hoisting
+## Antes de abrir la habitación: el hoisting
 
-Ahora la segunda capa. Antes de ejecutar una sala (un módulo, una función, un bloque),
+Ahora la segunda capa. Antes de ejecutar el código de una habitación (un módulo, una función,
+un bloque),
 JavaScript recorre sus declaraciones e instala **todos sus casilleros**. A eso se le llama
 informalmente **hoisting** ("elevación"): es como si las declaraciones subieran al principio de
 su scope. Lo que cambia según el tipo de declaración es **qué hay dentro** del casillero cuando
@@ -259,7 +262,7 @@ Cannot access 'contador' before initialization
 ```
 
 El precinto vale para leer **y** para escribir. La asignación encuentra el casillero `contador`
-de la sala de `f` y no puede tocarlo. Con `var` habría funcionado en silencio.
+de la habitación de `f` y no puede tocarlo. Con `var` habría funcionado en silencio.
 
 </Respuesta>
 
@@ -272,12 +275,12 @@ no declarado devuelve `"undefined"` sin lanzar. La TDZ añadió una excepción. 
 
 ### ¿Por qué no cae al casillero de fuera?
 
-Junta las dos capas: una sala interna con un `const` que se llama igual que uno externo, y un
+Junta las dos capas: una habitación interna con un `const` que se llama igual que uno externo, y un
 acceso **antes** de la línea del `const`. Podrías pensar que, como el interno aún no está listo,
-la búsqueda sigue hacia fuera. No lo hace: el casillero interno se instaló al abrir la sala, así
-que tapa al externo en **toda** la sala, también en las líneas anteriores a su declaración.
+la búsqueda sigue hacia fuera. No lo hace: el casillero interno se instaló al abrir la habitación, así
+que tapa al externo en **toda** la habitación, también en las líneas anteriores a su declaración.
 
-Es la otra cara de la decisión de ES2015: un mismo nombre dentro de una sala se refiere siempre
+Es la otra cara de la decisión de ES2015: un mismo nombre dentro de una habitación se refiere siempre
 al mismo casillero. Si la búsqueda cayera hacia fuera, `user` significaría una variable en unas
 líneas y otra distinta en las siguientes. Comprueba que lo has visto venir:
 
@@ -330,17 +333,18 @@ asignas a un `var`, antes de su línea el casillero contiene `undefined`, y llam
 <Profundiza titulo="script clásico frente a módulo">
 
 Todo lo anterior se comporta igual en un `<script>` clásico y en un módulo ES, pero hay
-diferencias en la sala de más arriba. Un módulo siempre está en **modo estricto**, y su nivel
-superior es una sala propia:
+diferencias en la habitación de más arriba. Un módulo siempre está en **modo estricto**, y su nivel
+superior es una habitación propia:
 
 - En un script clásico, un `var` de nivel superior se convierte en propiedad del objeto global
   (`window.x` en el navegador); `let` y `const` no. En un módulo, ninguno de los tres.
 - En un script sin modo estricto, asignar a un nombre no declarado (`sinDeclarar = 2`) crea una
   variable global sin avisar. En un módulo lanza `ReferenceError: sinDeclarar is not defined`.
 - Una function declaration dentro de un bloque tiene scope de bloque en modo estricto. Sin modo
-  estricto, por compatibilidad con código antiguo, también es visible fuera del bloque.
+  estricto, por compatibilidad con código antiguo, normalmente también es visible fuera del
+  bloque, como si fuera un `var` (que vale `undefined` hasta que se ejecuta el bloque).
 
-En la especificación, cada sala es un *Environment Record* y la instalación de casilleros es la
+En la especificación, cada habitación es un *Environment Record* y la instalación de casilleros es la
 fase de *declaration instantiation* que precede a la ejecución de cada scope.
 
 </Profundiza>
@@ -477,7 +481,7 @@ incluida la trampa de la function declaration que lee una `const` precintada:
 
 ## Lo que ahora puedes explicar
 
-Si alguien en tu equipo dice que `let` y `const` "no tienen hoisting", sabes corregirlo: el casillero existe desde que se abre la sala, solo que precintado, y por eso una
+Si alguien en tu equipo dice que `let` y `const` "no tienen hoisting", sabes corregirlo: el casillero existe desde que se abre la habitación, solo que precintado, y por eso una
 `const` interna tapa a la externa incluso antes de su línea. Sabes leer los dos `ReferenceError`
 y distinguir "no existe" de "todavía no", sabes que el scope se decide en el plano del código y
 no en quién llama, y sabes por qué un archivo de React puede romperse por una línea que se
@@ -486,4 +490,4 @@ ejecuta al importarlo mientras sus componentes, llamados más tarde, nunca tiene
 Hay algo que hasta ahora has dado por sentado: **qué hay dentro** del casillero. Con `const`, el
 casillero no se puede reasignar, pero si guarda un objeto, ese objeto sí puede cambiar. Lo que
 un casillero guarda en realidad, un valor o una referencia, y por qué eso decide cuándo React
-detecta que algo cambió, es la siguiente lección: valores y referencias.
+detecta que algo cambió, es la siguiente lección: **Valores y referencias**.

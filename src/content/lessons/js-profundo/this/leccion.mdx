@@ -66,7 +66,8 @@ añadió `Function.prototype.bind` y el **modo estricto**. Antes de las arrow fu
 estaba lleno de `var self = this;` para que un callback interno viera el objeto. ES2015 trajo las **arrow functions**, que no tienen `this`
 propio, y las **clases**, que son sintaxis sobre el mismo mecanismo.
 
-React vivió esa historia en primera persona. Con `React.createClass`, React enlazaba los métodos
+React vivió esa historia en primera persona. Con `React.createClass`, su API original para
+componentes, React enlazaba los métodos
 automáticamente (*autobinding*). Con las clases de ES2015 dejó de hacerlo, y aparecieron los
 `this.handleClick = this.handleClick.bind(this)` en cada constructor. Cuando presentó los Hooks
 (estables desde React 16.8), su documentación citó entre los motivos que las clases obligan a
@@ -125,7 +126,7 @@ En `app.panel.quien()` lo que hay antes del último punto es `app.panel`: `this`
 
 </AntesDeSeguir>
 
-### Llevarte el control a otra habitación
+### Prestar el control
 
 `onClick={this.handleGuardar}` no llama al método: le **entrega el
 control a React**, sin tele. Más tarde React lo pulsa como una función cualquiera, algo
@@ -414,8 +415,9 @@ contador no se enteró. Un bug silencioso, con efectos en otra parte del program
 </AntesDeSeguir>
 
 El modo estricto se activa con la directiva `"use strict"` al principio del archivo o de una
-función, pero sobre todo **es automático en dos sitios**: los **módulos ES** (`<script type="module">`, `.mjs` o cualquier archivo de un proyecto con
-Vite, Next u otro bundler moderno) y los **cuerpos de clase**, aunque estén dentro de un script sloppy. Por eso en tu
+función, pero sobre todo **es automático en dos sitios**: los **módulos ES** (`<script type="module">`,
+`.mjs` o los archivos con `import`/`export` que procesan Vite, Next u otro bundler moderno) y los
+**cuerpos de clase**, aunque estén dentro de un script sloppy. Por eso en tu
 código casi siempre verás `undefined`, y un error ruidoso en lugar de una escritura silenciosa
 en `window`.
 

@@ -32,6 +32,8 @@ export const closures: LessonDef = {
   sources: [
     { title: "MDN: Closures", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Guide/Closures" },
     { title: "react.dev: El estado como una instantánea", url: "https://es.react.dev/learn/state-as-a-snapshot" },
+    { title: "Brendan Eich: Popularity (2008)", url: "https://brendaneich.com/2008/04/popularity/" },
+    { title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020)", url: "https://dl.acm.org/doi/10.1145/3386327" },
     { title: "react.dev: Actualizar el estado basándote en el anterior", url: "https://es.react.dev/reference/react/useState#updating-state-based-on-the-previous-state" },
   ],
   reviewed: { date: "2026-10-12", versions: { react: "19.3", node: "22" } },

@@ -83,10 +83,10 @@ Esa decisión tiene un precio, y ese precio son los tres bugs del ticket.
 
 ## El almacén y las fichas
 
-Imagina un **almacén** con estantes numerados, y tu escritorio lleno de **fichas**. Esta imagen te
-va a acompañar toda la lección.
+Imagina un **almacén** con estantes numerados y, dentro de cada casillero de la lección **Scope y
+hoisting**, una **ficha**. Esta imagen te va a acompañar toda la lección.
 
-**Cada variable es una ficha.** Si guarda un primitivo, el valor va escrito en la ficha misma:
+**Cada variable guarda una ficha.** Si guarda un primitivo, el valor va escrito en la ficha misma:
 `3`, `"Ana"`, `true`. Si guarda un objeto, el objeto no cabe en la ficha: es una **caja** que vive
 en un estante del almacén, y la ficha solo dice **"caja del estante 17"**. Ese número es la
 **referencia**.
@@ -185,7 +185,7 @@ a otra cosa.
 Ningún nombre encaja del todo. En el paso por referencia de verdad (`ref` en C#, `&` en C++), la
 función recibe la variable misma y puede hacer que la de fuera apunte a otro sitio; en JavaScript
 eso es imposible. Por eso hay quien usa un tercer nombre, *call by sharing* ("paso por
-compartición"), acuñado por el equipo de Barbara Liskov para el lenguaje CLU en los años 70: se
+compartición"), que se suele atribuir a Barbara Liskov y su lenguaje CLU, de los años 70: se
 pasa una copia de la referencia y el objeto queda compartido.
 
 </Profundiza>
@@ -226,7 +226,7 @@ es `false`. Con objetos se comporta igual: compara fichas, no cajas.
 
 El comité que evoluciona JavaScript (TC39) estudió una propuesta de *records* y *tuples*:
 estructuras inmutables, escritas `#{ id: 1 }` y `#[1, 2]`, que se compararían por contenido
-(`#[1, 2] === #[1, 2]` sería `true`). Llegó a la etapa 2, pero se retiró.
+(`#[1, 2] === #[1, 2]` sería `true`). Llegó a la etapa 2 de 4, pero en 2025 el comité la retiró.
 
 </Profundiza>
 
