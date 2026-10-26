@@ -8,9 +8,9 @@ export const variablesYFunciones: LessonDef = {
   slug: "variables-y-funciones",
   title: "Variables y funciones",
   summary:
-    "Por qué un map con llaves no pinta nada y un onClick se dispara al renderizar: const vs let, arrow functions, return implícito, parámetros por defecto y funciones como valores.",
+    "Un refactor a arrow functions deja una lista vacía y un botón que borra sin clic: etiquetas (const, let, var), funciones como máquinas que son valores, qué sale por la bandeja (return implícito), parámetros por defecto y rest, y la diferencia entre una función y llamarla.",
   concepts: ["js.variables", "js.funciones"],
-  minutes: 30,
+  minutes: 40,
   questions: preguntas,
   exercises: ejercicios,
   videos: [],
