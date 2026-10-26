@@ -1,48 +1,152 @@
-## Dos bugs que ya has visto
+## Un refactor "que no cambiaba nada"
 
-Esta lista no pinta nada, y no hay ningún error en consola:
+Ayer se aprobó un PR: *"Paso los callbacks a arrow functions, que es lo mismo pero más corto, y
+quito una arrow que sobraba en el botón"*. Hoy hay un ticket:
+
+> **#273 — "Desde el refactor, la lista de tareas sale vacía".** No hay ningún error en consola.
+> Con el arreglo rápido que se subió esta mañana las tareas sí aparecen… y se borran solas, sin
+> que nadie pulse "Borrar".
+
+El cambio en la lista:
 
 ```jsx
-function TodoList({ items, onDelete }) {
-  return (
-    <ul>
-      {items.map((item) => {
-        <TodoItem key={item.id} item={item} />;
-      })}
-    </ul>
-  );
+// antes
+{items.map(function (item) {
+  return <TodoItem key={item.id} item={item} onDelete={onDelete} />;
+})}
+
+// después del refactor
+{items.map((item) => {
+  <TodoItem key={item.id} item={item} onDelete={onDelete} />;
+})}
+```
+
+El arreglo rápido devolvió el `return` y dejó a la vista el cambio del botón en `TodoItem`:
+
+```jsx
+// antes
+<button onClick={() => onDelete(item.id)}>Borrar</button>
+
+// después del refactor
+<button onClick={onDelete(item.id)}>Borrar</button>
+```
+
+Ahora cada tarea se borra **al renderizar la lista**, sin que nadie haga clic (y, en desarrollo,
+React avisa de que se actualiza un componente mientras se renderiza otro). Tres preguntas:
+
+1. ¿Por qué un `map` que claramente escribe un `<TodoItem>` por tarea devuelve una lista vacía, y
+   sin un solo error?
+2. ¿Por qué el botón borra sin clic, si lo único que se quitó fue "una arrow que sobraba"?
+3. ¿Es verdad que una arrow function es "lo mismo, pero más corta"?
+
+Ninguna es un problema de React: son reglas de JavaScript, y tienen historia.
+
+---
+
+## Dos épocas en el mismo lenguaje
+
+Durante sus primeros veinte años, el estándar de JavaScript tuvo una sola forma de declarar
+variables (`var`) y una sola palabra para escribir funciones (`function`). La edición de 2015 del estándar (ECMAScript
+2015, también llamada ES6) añadió de golpe casi todo lo que usas a diario: `let`, `const`, las
+arrow functions, los parámetros por defecto y los parámetros rest.
+
+¿Por qué *añadir* en lugar de *arreglar*? Porque la web no se puede romper: muchísimas páginas
+dependen de cómo se comporta `var`, rarezas incluidas. La salida fue crear palabras nuevas con
+reglas mejores y dejar las viejas como estaban.
+
+---
+
+## La mesa de trabajo
+
+La imagen de toda la lección: tu programa es una **mesa de trabajo** llena de **valores**
+(números, strings, objetos, arrays). **Las variables son etiquetas** con un nombre, atadas con un
+hilo a un valor de la mesa. La etiqueta no *es* el valor: solo te permite encontrarlo.
+
+- `const`: la etiqueta va atada con nudo ciego. No la puedes desatar para atarla a otro valor. Es
+  la opción por defecto.
+- `let`: la puedes desatar y atar a otro valor. Úsala cuando de verdad cambia (un acumulador, un
+  índice).
+- `var`: la etiqueta de la época anterior. Su alcance es la función entera en lugar del bloque y
+  tiene rarezas de hoisting. En código moderno no se usa.
+
+`let` y `const` tienen **alcance de bloque**: la etiqueta solo existe dentro de las llaves donde
+se declara (un `if`, un `for`, una función).
+
+<AntesDeSeguir>
+
+¿Qué imprime esto?
+
+```js
+if (true) {
+  var a = 1;
+  let b = 2;
 }
+console.log(typeof a, typeof b);
 ```
 
-Y en este botón, el elemento se borra **al renderizar** la lista, sin que nadie haga click (o React se queja de demasiados renders si `handleDelete` cambia estado):
+<Respuesta>
 
-```jsx
-<button onClick={handleDelete(item.id)}>Borrar</button>
+```
+number undefined
 ```
 
-Ninguno de los dos es un problema de React. El primero es la regla del **return** en las arrow functions; el segundo, la diferencia entre **una función** y **el resultado de llamarla**. Antes de llegar ahí, repasemos rápido las variables, porque hay un detalle de `const` que también causa bugs de React.
+`a` se declaró con `var`, que ignora las llaves del `if`: la etiqueta pertenece a la función que
+lo contiene (o al nivel superior del archivo). `b` desaparece al cerrar la llave, y `typeof` sobre un nombre que no existe
+devuelve `"undefined"` en lugar de lanzar. El detalle de scope, hoisting y por qué usar `let` o
+`const` antes de su línea lanza un error está en la lección «Scope y hoisting» del módulo 3.
 
-## let, const y var
+</Respuesta>
 
-- `const`: la variable no se puede **reasignar**. Es la opción por defecto.
-- `let`: se puede reasignar. Úsala cuando de verdad cambia (un acumulador, un índice).
-- `var`: la forma antigua. Su alcance es la función entera en lugar del bloque y tiene rarezas de hoisting. En código moderno no se usa.
-
-`let` y `const` tienen **alcance de bloque**: solo existen dentro de las llaves donde se declaran (un `if`, un `for`, una función). El detalle de scope, hoisting y por qué usarlas antes de declararlas lanza un error está en la lección de scope y hoisting del módulo 3.
+</AntesDeSeguir>
 
 ### Reasignar no es mutar
 
-`const` protege la **variable** (a qué valor apunta), no el **valor**. Si el valor es un objeto o un array, puedes cambiar su contenido:
+Aquí está el detalle que más confunde. El nudo de `const` protege el **hilo** (a qué valor
+apunta la etiqueta), no el **valor**. Si el valor es un objeto o un array, nada te impide
+cambiar lo que hay dentro:
 
 ```js
 const user = { name: "Ana" };
-user.name = "Luis";   // ✅ muta el objeto: const no lo impide
+user.name = "Luis";     // ✅ muta el objeto: const no lo impide
 user = { name: "Eva" }; // ❌ TypeError: Assignment to constant variable.
 ```
 
+<AntesDeSeguir>
+
+Dos etiquetas, un solo array. ¿Qué imprime?
+
+```js
+const tareas = ["leer"];
+let otras = tareas;
+otras.push("escribir");
+otras = ["dormir"];
+console.log(tareas.join(","));
+console.log(otras.join(","));
+```
+
+<Respuesta>
+
+```
+leer,escribir
+dormir
+```
+
+`let otras = tareas` no copia nada: ata otra etiqueta **al mismo** array, y el `push` lo cambia
+para las dos. Luego `otras = ["dormir"]` desata `otras` y la ata a un array nuevo.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Esta pregunta pone a prueba justo la diferencia entre las dos operaciones, con un `try/catch`
+para ver qué lanza la reasignación:
+
 <Pregunta id="variables-const-mutar" />
 
-Esto importa en React por partida doble. Primero, porque explica por qué casi todo es `const` en un componente: cada render es una llamada nueva a la función, y `const [count, setCount] = useState(0)` crea variables nuevas cada vez. Nunca reasignas `count`; pides a React un render nuevo con `setCount`. Segundo, porque `const` **no te protege** del bug clásico:
+En React esto importa dos veces. Casi todo es `const` en un componente porque cada render es una
+**llamada nueva** a la función: `const [count, setCount] = useState(0)` crea etiquetas nuevas
+cada vez, y en lugar de reasignar `count` pides un render nuevo con `setCount`. Y `const` **no te
+protege** del bug clásico:
 
 ```jsx
 const [todos, setTodos] = useState([]);
@@ -53,13 +157,34 @@ function add(todo) {
 }
 ```
 
-La solución es crear un array nuevo (`setTodos([...todos, todo])`); lo verás a fondo en valores vs referencias e inmutabilidad.
+La solución es crear un array nuevo (`setTodos([...todos, todo])`); lo verás a fondo en la
+lección «Valores y referencias» del módulo 3.
 
 <Callout type="nota">
 Para congelar el contenido de verdad existe `Object.freeze`, pero es superficial y en la práctica casi no se usa: la convención en React es simplemente no mutar.
 </Callout>
 
-## Tres formas de crear una función
+---
+
+## Las máquinas también están en la mesa
+
+Segunda capa. **Una función es una máquina**: ranuras de entrada (los parámetros), un botón
+(llamarla) y una bandeja de salida (lo que devuelve). Y la máquina es un valor más de la mesa:
+puedes atarle una etiqueta, guardarla en un cajón, dársela a otra máquina o sacarla de la bandeja
+de otra:
+
+```js
+const handlers = { save: () => "guardado" };     // guardada en un objeto
+[3, 1, 2].sort((a, b) => a - b);                  // pasada como argumento
+const greet = (greeting) => (name) => greeting + ", " + name; // devuelta
+greet("Hola")("Ana"); // "Hola, Ana"
+```
+
+(Que `greet("Hola")` recuerde `greeting` después de terminar es un closure; lo tienes en el
+módulo 3.) Las funciones como valores vienen de la influencia de Scheme, un dialecto de Lisp que Eich
+admiraba y que marcó el diseño original de JavaScript, y son la base de React: componentes, handlers, efectos.
+
+Hay tres formas de fabricar una máquina:
 
 ```js
 // Declaración: tiene nombre y se puede usar antes de la línea donde aparece
@@ -76,27 +201,129 @@ const sub = function (a, b) {
 const mul = (a, b) => a * b;
 ```
 
-Las diferencias que importan en el día a día:
+<AntesDeSeguir>
 
-- Las **declaraciones** se pueden llamar antes de su línea (hoisting). Las expresiones y arrows no: son una `const` como cualquier otra.
-- Las **arrow functions** no tienen `this` ni `arguments` propios: usan los del scope donde se escribieron. Por eso son las cómodas para callbacks. El detalle de `this` está en su propia lección del módulo 3.
-- Las arrows no se pueden usar con `new`.
-
-En componentes de React verás las dos convenciones (`function Button()` y `const Button = () =>`); para lo que hace React son equivalentes.
-
-## Return implícito y la trampa del objeto
-
-Una arrow tiene dos formas de cuerpo:
+¿Qué imprime este script?
 
 ```js
-const double = (n) => n * 2;          // cuerpo de expresión: devuelve n * 2
-const double2 = (n) => { n * 2; };    // cuerpo de bloque: evalúa y DESCARTA → undefined
+console.log(sumar(2, 3));
+
+function sumar(a, b) {
+  return a + b;
+}
+
+try {
+  console.log(restar(5, 1));
+} catch (e) {
+  console.log(e.name);
+}
+
+const restar = (a, b) => a - b;
+```
+
+<Respuesta>
+
+```
+5
+ReferenceError
+```
+
+Las **declaraciones** se preparan antes de ejecutar el código (hoisting): puedes llamarlas antes
+de su línea. Las expresiones y las arrows no: son una `const` como cualquier otra, inutilizable
+hasta que se ejecuta su línea (la *TDZ*, que verás a fondo en el módulo 3).
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Las otras diferencias que importan en el día a día son de las arrows:
+
+- **No tienen `this` ni `arguments` propios**: usan los de la función donde se escribieron. Por
+  eso son las cómodas para callbacks. El detalle de `this` está en su propia lección, «this», del módulo 3.
+- **No se pueden usar con `new`.**
+
+<Profundiza titulo="por qué las arrows no tienen this propio">
+
+Antes de 2015, un callback escrito con `function` dentro de un método recibía su propio `this`,
+casi nunca el que querías, y el código se llenaba de parches como `var self = this;` o
+`.bind(this)`. Las arrows no crean su propio `this` y usan el del código que las rodea, así que
+el parche sobra. A cambio, no sirven como constructores ni como métodos que necesiten su `this`.
+
+</Profundiza>
+
+En componentes de React verás las dos convenciones (`function Button()` y
+`const Button = () =>`); para lo que hace React son equivalentes.
+
+---
+
+## La bandeja de salida
+
+Tercera capa: ¿qué sale por la bandeja? Una arrow tiene dos formas de cuerpo:
+
+```js
+const double = (n) => n * 2;              // cuerpo de expresión: devuelve n * 2
+const double2 = (n) => { n * 2; };        // cuerpo de bloque: evalúa y DESCARTA → undefined
 const double3 = (n) => { return n * 2; }; // bloque con return explícito
 ```
 
-La regla: **si después de `=>` hay una llave, es un bloque**, y un bloque solo devuelve algo con `return`. Una función sin `return` (o con `return;` a secas) devuelve `undefined`.
+Con **cuerpo de expresión**, lo que escribes tras la flecha va directo a la bandeja. Con **cuerpo
+de bloque** hay un taller dentro, y de él solo sale lo que pongas con `return`. La regla:
 
-Ese es el primer bug del inicio: el callback del `map` tiene llaves y no tiene `return`, así que `map` devuelve `[undefined, undefined, …]` y React no pinta nada (`undefined` en una lista se ignora sin error). Arreglos posibles:
+> **Si después de `=>` hay una llave, es un bloque**, y un bloque solo devuelve algo con
+> `return`. Una función sin `return` (o con `return;` a secas) devuelve `undefined`.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const a = [1, 2].map((n) => n * 2);
+const b = [1, 2].map((n) => {
+  n * 2;
+});
+console.log(a.join(" "));
+console.log(b.length, b[0]);
+```
+
+<Respuesta>
+
+```
+2 4
+2 undefined
+```
+
+`map` llamó al callback dos veces en ambos casos, pero en `b` el taller calculó `n * 2`, lo tiró
+y no puso nada en la bandeja: cada vuelta devolvió `undefined`, sin ningún error.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### La trampa del objeto
+
+La misma regla produce la trampa del objeto literal: `() => { a: 1 }` **no** devuelve un objeto.
+Las llaves abren un bloque, `a:` se interpreta como una etiqueta (*label*, una sintaxis antigua y
+casi olvidada, usada sobre todo para nombrar bucles) y `1` es una expresión que se descarta. Para
+devolver un objeto con return implícito, envuélvelo en paréntesis: `() => ({ a: 1 })`.
+
+<Profundiza titulo="por qué la llave gana siempre">
+
+La gramática de ECMAScript lo decide por adelantado: el cuerpo conciso de una arrow
+(*ConciseBody*) solo se lee como expresión si **no** empieza por `{`. Lo mismo vale para una
+sentencia suelta, que nunca puede empezar por `{` como expresión. El parser no "adivina" por lo
+que viene después: `{ id }` tras la flecha es un bloque aunque parezca un objeto abreviado.
+
+</Profundiza>
+
+Esta pregunta compara llaves, paréntesis y `return` sobre el mismo `map`:
+
+<Pregunta id="funciones-arrow-objeto" />
+
+<Callout type="cuidado">
+`() => { a: 1, b: 2 }` ni siquiera compila: lanza un `SyntaxError`, porque `b: 2` no es válido como expresión. Si ves un error raro en una arrow que devuelve un objeto, busca los paréntesis que faltan. Típico en reducers, `setState((prev) => ({ ...prev, x }))` y `map` que transforma a objetos.
+</Callout>
+
+Con esto, los arreglos posibles del `map` del ticket son tres:
 
 ```jsx
 {items.map((item) => <TodoItem key={item.id} item={item} />)}   // return implícito
@@ -109,15 +336,12 @@ Ese es el primer bug del inicio: el callback del `map` tiene llaves y no tiene `
 })}
 ```
 
-La misma regla produce la trampa del objeto literal: `() => { a: 1 }` **no** devuelve un objeto. Las llaves abren un bloque, `a:` se interpreta como una etiqueta (*label*, una sintaxis casi olvidada de JavaScript) y `1` es una expresión que se descarta. Para devolver un objeto con return implícito, envuélvelo en paréntesis: `() => ({ a: 1 })`.
+---
 
-<Pregunta id="funciones-arrow-objeto" />
+## Las ranuras de entrada
 
-<Callout type="cuidado">
-`() => { a: 1, b: 2 }` ni siquiera compila: lanza un `SyntaxError`, porque `b: 2` no es válido como expresión. Si ves un error raro en una arrow que devuelve un objeto, busca los paréntesis que faltan. Típico en reducers, `setState((prev) => ({ ...prev, x }))` y `map` que transforma a objetos.
-</Callout>
-
-## Parámetros por defecto
+Cuarta capa: lo que entra en la máquina. Una ranura puede tener un **repuesto** para cuando llega
+vacía:
 
 ```js
 function createUser(name, role = "viewer") {
@@ -127,18 +351,32 @@ function createUser(name, role = "viewer") {
 
 Dos reglas que no son obvias:
 
-1. **Solo se aplican con `undefined`.** Omitir el argumento o pasar `undefined` activan el valor por defecto; `null`, `0`, `""` o `false` son valores reales y se respetan. Esto muerde con APIs que devuelven `null` para "sin valor": `createUser("Ana", null)` crea un usuario con `role: null`.
-2. **Se evalúan en cada llamada**, en el momento de la llamada. `list = []` crea un array nuevo cada vez (al contrario que en Python, donde el valor por defecto se comparte), y `id = nextId()` llama a `nextId` solo cuando hace falta. Pueden incluso usar parámetros anteriores: `function range(start, end = start + 10)`.
+1. **El repuesto solo se usa si la ranura llega vacía, y vacía significa `undefined`.** Omitir el
+   argumento o pasar `undefined` activan el valor por defecto; `null`, `0`, `""` o `false` son
+   piezas reales y se respetan. Esto muerde con APIs que devuelven `null` para "sin valor":
+   `createUser("Ana", null)` crea un usuario con `role: null`.
+2. **El repuesto se fabrica en cada llamada**, en el momento de la llamada. `list = []` crea un
+   array nuevo cada vez (al contrario que en Python, donde el valor por defecto se evalúa una sola
+   vez al definir la función y se comparte), e `id = nextId()` llama a `nextId` solo cuando hace
+   falta. Puede incluso usar parámetros anteriores: `function range(start, end = start + 10)`.
+
+La primera regla, con `null` y `""` frente a `undefined`:
 
 <Pregunta id="funciones-default-null" />
 
+Y la segunda: cuándo se evalúa el valor por defecto y cuántas veces.
+
 <Pregunta id="funciones-default-por-llamada" />
 
-Ojo con el matiz: el valor por defecto es nuevo en cada llamada **si es una expresión que crea algo** (`[]`, `{}`). Si el valor por defecto es una variable que apunta a un array existente (`tags = DEFAULT_TAGS`), todas las llamadas reciben **ese mismo** array, y mutarlo lo cambia para todas. Lo arreglarás en el primer ejercicio.
+Ojo con el matiz de la segunda regla: el repuesto es nuevo en cada llamada **si es una expresión
+que crea algo** (`[]`, `{}`). Si es una etiqueta atada a un array que ya existe
+(`tags = DEFAULT_TAGS`), todas las llamadas reciben **ese mismo** array, y mutarlo lo cambia para
+todas (y cambia la constante, que `const` no impide). Lo arreglarás en el primer ejercicio.
 
-## Rest params y arguments
+### La tolva del final: rest params
 
-`...nombre` como último parámetro recoge los argumentos restantes en un **array de verdad**:
+`...nombre` como último parámetro es una tolva que recoge los argumentos restantes en un **array
+de verdad**:
 
 ```js
 function log(level, ...messages) {
@@ -147,29 +385,30 @@ function log(level, ...messages) {
 log("info", "servidor", "listo"); // [info] servidor listo
 ```
 
-Antes existía `arguments`, un objeto *parecido* a un array (tiene `length` e índices, pero no `map` ni `reduce`) que solo existe en funciones normales. En código moderno usa siempre rest params: son explícitos, son un array y funcionan en arrows.
+Antes de 2015 solo existía `arguments`, un objeto *parecido* a un array (con `length` e índices,
+sin `map` ni `reduce`) y solo en funciones normales. Usa rest params: son un array y funcionan en
+arrows.
+
+Esta pregunta compara los dos y comprueba qué ve una arrow cuando lee `arguments`:
 
 <Pregunta id="funciones-rest-arguments" />
 
-## Las funciones son valores
+---
 
-Una función es un valor como un número o un objeto: puedes guardarla en una variable o en una propiedad, pasarla como argumento y devolverla desde otra función.
+## Dar la máquina o dar lo que sale de ella
 
-```js
-const handlers = { save: () => "guardado" };     // guardada en un objeto
-[3, 1, 2].sort((a, b) => a - b);                  // pasada como argumento
-const greet = (greeting) => (name) => greeting + ", " + name; // devuelta
-greet("Hola")("Ana"); // "Hola, Ana"
-```
+Última capa. Si las funciones son valores, puedes entregar dos cosas muy distintas:
 
-(Que `greet("Hola")` recuerde `greeting` después de terminar es un closure; lo tienes en el módulo 3.)
+- `handleClick` es **la máquina**, un valor que todavía no ha hecho nada.
+- `handleClick()` es **pulsar el botón ahora** y quedarte con lo que sale por la bandeja.
 
-La distinción clave es entre **la función** y **llamarla**:
+En JSX, lo que va entre llaves se evalúa **durante el render**. `onClick={handleClick}` le da a
+React la máquina para que la pulse cuando haya un clic. `onClick={handleClick()}` la pulsa en cada
+render y le pasa a React lo que salió (normalmente `undefined`). Si necesitas pasar argumentos,
+envuélvela en otra máquina que todavía no se ha pulsado: `onClick={() => handleDelete(item.id)}`.
 
-- `handleClick` es la función, un valor que todavía no ha hecho nada.
-- `handleClick()` la **ejecuta ahora** y vale lo que devuelva.
-
-En JSX, lo que va entre llaves se evalúa durante el render. `onClick={handleClick}` le da a React la función para que la llame cuando haya un click. `onClick={handleClick()}` la ejecuta en cada render y le pasa a React el resultado (normalmente `undefined`). Ese es el segundo bug del inicio. Si necesitas pasar argumentos, envuélvela en otra función: `onClick={() => handleDelete(item.id)}`.
+Esta pregunta imita lo que hace React con `onClick` sin React de por medio: comprueba cuándo se
+ejecuta cada handler.
 
 <Pregunta id="funciones-handler-referencia" />
 
@@ -177,21 +416,90 @@ En JSX, lo que va entre llaves se evalúa durante el render. `onClick={handleCli
 Pregúntate siempre: ¿quiero **la función** o **su resultado**? Props como `onClick`, `onChange`, el callback de `useEffect` o el de `map` esperan una función. Si ves paréntesis de llamada ahí sin una arrow alrededor, casi seguro es un bug.
 </Callout>
 
-## Funciones puras, en una frase
+### Máquinas que no tocan la mesa
 
-Una función es **pura** si con los mismos argumentos devuelve siempre lo mismo y no cambia nada fuera de ella (no muta sus argumentos, no escribe variables externas, no hace peticiones). React espera que tus componentes se comporten así durante el render; por eso `todos.push(...)` dentro de un componente es un problema y `createTask` del ejercicio no debe mutar el array que recibe. El tema completo, con sus reglas y por qué React depende de ellas, está en el módulo 6.
+Una función es **pura** si con los mismos argumentos devuelve siempre lo mismo y no cambia nada
+fuera de ella: solo mira sus ranuras y solo escribe en su bandeja (no muta sus argumentos, no
+escribe variables externas, no hace peticiones). React espera eso de tus componentes durante el
+render; por eso `todos.push(...)` en un componente es un problema y `createTask` del ejercicio no
+debe mutar el array que recibe. El tema completo está en el módulo 6, «Programación funcional y patrones».
 
-## Práctica
+---
+
+## El ticket, resuelto
+
+**¿Por qué la lista sale vacía sin un error?** Tras la flecha del `map` hay una llave: es un
+bloque. El `<TodoItem>` se construye, nadie lo pone en la bandeja con `return` y se descarta. El
+`map` devuelve `[undefined, undefined, …]`, y React ignora `undefined` en una lista sin quejarse.
+
+**¿Por qué el botón borra sin clic?** Porque la arrow no sobraba: era la máquina sin pulsar. Sin
+ella, `onDelete(item.id)` se ejecuta al construir las props.
+
+<AntesDeSeguir>
+
+El compilador de JSX convierte cada elemento en una llamada con un objeto de props (algo como
+`jsx("button", { onClick: … })`). Con una imitación mínima, ¿qué imprime?
+
+```js
+// imitación mínima de lo que produce el compilador de JSX
+const jsx = (type, props) => ({ type, props });
+
+const borrados = [];
+const onDelete = (id) => {
+  borrados.push(id);
+};
+
+const items = [{ id: 1 }, { id: 2 }];
+const botones = items.map((item) => jsx("button", { onClick: onDelete(item.id) }));
+
+console.log(borrados.join(","));
+console.log(typeof botones[0].props.onClick);
+```
+
+<Respuesta>
+
+```
+1,2
+undefined
+```
+
+Construir el objeto de props obliga a evaluar cada valor, y evaluar `onDelete(item.id)` es pulsar
+el botón: las tareas se borran mientras se construye la lista, y `onClick` queda en `undefined`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+**¿Es una arrow "lo mismo, pero más corta"?** Casi, pero no: la llave cambia lo que sale por la
+bandeja, no se puede llamar antes de su línea, no tiene `this` ni `arguments` propios y no sirve
+con `new`. Y quitar una arrow nunca es cosmético: cambia "una máquina" por "lo que sale de ella".
+
+---
+
+## Práctica: el resto del PR
+
+El refactor también tocó `utils.js` y dejó tres bugs de esta lección: una arrow con llaves que no
+devuelve el objeto, un valor por defecto compartido que se muta y un handler que se pulsa antes
+de tiempo. Este ejercicio pone a prueba que los reconozcas y los arregles:
 
 <Ejercicio id="funciones-utilidades-rotas" />
 
+En la revisión piden quitar el formateo de precios copiado en varios componentes con una máquina
+que fabrica máquinas. Este ejercicio pone a prueba los parámetros por defecto
+(incluido qué hacer con `null`), los rest params y las funciones que devuelven funciones:
+
 <Ejercicio id="funciones-formatter-pipe" />
 
-## Resumen
+---
 
-- Usa `const` por defecto y `let` cuando la variable se reasigna; `var` no. Ambas tienen alcance de bloque.
-- `const` impide **reasignar**, no **mutar**: `push` sobre un array `const` funciona (y en el estado de React es un bug).
-- Tras `=>`, una llave abre un **bloque**: sin `return` devuelve `undefined`. Para devolver un objeto: `() => ({ a: 1 })`.
-- Los parámetros por defecto solo se aplican con `undefined` (no con `null`) y se evalúan en cada llamada.
-- Los rest params (`...args`) son un array real; `arguments` no lo es y las arrows no lo tienen.
-- Las funciones son valores: `handleClick` es la función, `handleClick()` es su resultado. A `onClick` pásale la función.
+## Lo que ahora puedes explicar
+
+Si alguien dice "`const` significa que no cambia", ahora sabes precisarlo: no cambia **a qué**
+está atada la etiqueta, pero lo que hay al otro lado del hilo se puede mutar, y en el estado de
+React eso es un bug. Sabes que una llave tras `=>` abre un taller del que solo sale lo que pongas
+con `return`, que un repuesto solo entra con `undefined` y se fabrica en cada llamada, que
+`...rest` te da un array de verdad, y a leer cada `onClick` preguntándote si le das a React la
+máquina o lo que salió de ella.
+
+La siguiente lección mira de cerca las piezas más comunes de la mesa, strings, números y fechas,
+con sus propias trampas: un total con diecisiete decimales y una cita que aparece un día antes.

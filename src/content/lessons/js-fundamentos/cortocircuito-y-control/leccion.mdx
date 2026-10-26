@@ -1,14 +1,18 @@
-## Dos bugs con la misma causa
+## Un 0 que nadie escribió
 
-Este componente funciona… hasta que la lista está vacía:
+Es jueves y te asignan un ticket de la bandeja de entrada de la app:
+
+> **#252 — "Un 0 misterioso y un timeout que no se puede quitar".** Con la bandeja vacía aparece
+> un `0` suelto debajo del título. Además, integraciones configura `timeout: 0` ("sin límite") y
+> las peticiones se siguen cortando a los 3 segundos.
+
+Abres los dos archivos:
 
 ```jsx
 function Inbox({ items }) {
   return <div>{items.length && <List items={items} />}</div>;
 }
 ```
-
-Con `items = []` no ves "nada": ves un **0** solitario en la pantalla. Y en otra parte del código:
 
 ```js
 function createClient(config) {
@@ -19,60 +23,171 @@ function createClient(config) {
 createClient({ timeout: 0 }); // "sin timeout"... pero usa 3000
 ```
 
-El usuario pidió explícitamente `0` y el código lo ignora. Ninguno de los dos es un bug de React ni de la librería: es que `&&` y `||` **no son operadores booleanos** como en otros lenguajes. Vamos a ver qué hacen de verdad.
-
-## `&&` y `||` devuelven un operando
-
-En JavaScript, `a && b` y `a || b` devuelven **uno de los dos operandos tal cual**, sin convertirlo a booleano:
-
-- `a || b`: si `a` es truthy, devuelve `a`; si no, devuelve `b`.
-- `a && b`: si `a` es falsy, devuelve `a`; si no, devuelve `b`.
-
-Recuerda los falsy: `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined` y `NaN`. Todo lo demás es truthy (incluidos `[]`, `{}` y `"0"`).
+Un compañero dice "eso es el `||`, usa `??`" y sube este arreglo:
 
 ```js
-"Ana" || "anónimo";   // "Ana"
-"" || "anónimo";      // "anónimo"
-0 && "hay elementos"; // 0       ← no false: el propio 0
-3 && "hay elementos"; // "hay elementos"
+const timeout = options.timeout || config.timeout ?? 3000;
 ```
 
-Ahora los dos bugs se explican solos: `items.length && <List />` devuelve `0` cuando la lista está vacía, y `config.timeout || 3000` descarta el `0` porque es falsy.
+Y ahora no carga **ninguna** página que importe ese archivo. Para rematar, en la misma pantalla
+el selector de vista lee `?vista=2` de la URL y pasa por un `switch` que tiene un `case 2`… pero
+siempre acaba en `default`.
 
-### Evaluación perezosa
+Cuatro preguntas antes de tocar nada:
 
-"Cortocircuito" significa que, en cuanto el resultado está decidido, **la parte derecha no se evalúa**. No es solo una optimización: si la derecha tiene efectos (una llamada, un `throw`, una mutación), esos efectos no ocurren.
+1. ¿Por qué `&&` pinta un `0`, si la condición es falsa y lo esperable era "nada"?
+2. ¿Por qué `||` descarta un `0` que alguien escribió a propósito?
+3. ¿Por qué añadir `??` tumba el módulo entero?
+4. ¿Por qué `?vista=2` nunca entra en su `case 2`?
+
+Las tres primeras tienen la misma raíz, y empieza con algo que diste por supuesto desde tu
+primer lenguaje.
+
+---
+
+## Semáforos y agujas
+
+En Java, `a && b` y `a || b` solo aceptan booleanos y siempre producen un booleano: son
+**semáforos**, que miran dos condiciones y encienden una luz, verde o roja.
+
+En JavaScript no. `a || b` y `a && b` devuelven **uno de los dos operandos, tal cual**, sin
+convertirlo a booleano. No es una rareza aislada: el `or` de Python y el `||` de Perl o de Ruby
+hacen lo mismo. En JavaScript no fue un accidente: mientras se escribía el primer estándar
+(ECMAScript 1, 1997) se discutió si debían devolver un operando (el "estilo Perl") o un booleano
+(el "estilo Java"), porque los primeros motores no coincidían, y se eligió el estilo Perl para
+todos los casos.
+
+Por eso, durante años, la forma estándar de poner un valor por defecto fue
+`x = x || valorPorDefecto`, que falla en silencio con `0`, `""` o `false`: el bug del timeout. ES2015 lo
+resolvió para los parámetros (con `function f(x = 3)`), pero no para los objetos de opciones ni
+las respuestas de una API. Por eso **ES2020** añadió dos operadores pensados exactamente para
+"no hay nada": la coalescencia nula `??` y el encadenamiento opcional `?.`. ES2021 completó la
+familia con `||=`, `&&=` y `??=`.
+
+<Profundiza titulo="parámetros por defecto: solo undefined">
+
+Los parámetros por defecto de ES2015 se aplican cuando el argumento es `undefined`, y solo
+entonces: ni `null` ni `""` los activan.
 
 ```js
-user && user.logout();       // si user es null, logout no se ejecuta
-isDev || console.log("prod"); // solo imprime si isDev es falsy
+function saludar(nombre = "anónimo") {
+  return nombre;
+}
+console.log(JSON.stringify([saludar(undefined), saludar(null), saludar("")]));
+// ["anónimo",null,""]
 ```
 
-Ese patrón (`cond && hacerAlgo()`) aparece en código minificado y en algunos códigos base, pero para efectos un `if` es más claro. Úsalo para **expresiones** (valores), no como sustituto de un `if`.
+Es más estricta que `??`, que también reemplaza `null`. TypeScript admitió `?.` y `??` desde su
+versión 3.7.
+
+</Profundiza>
+
+---
+
+## La aguja
+
+Piensa en `a || b` como un **cambio de vía**: llegan dos vagones, `a` y `b`, y una **aguja**
+decide cuál sigue por la vía principal. No fabrica nada ni repinta el vagón: el que sale es uno
+de los que entraron, **tal cual**.
+Un semáforo te da una luz; una aguja te da un vagón.
+
+La aguja de `||` y la de `&&` inspeccionan el primer vagón con la prueba del torniquete de la
+lección anterior: ¿es truthy o falsy? Los falsy son `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined`
+y `NaN`. Todo lo demás es truthy, incluidos `[]`, `{}` y `"0"`.
+
+- `a || b`: si `a` es truthy, sigue `a`; si no, sigue `b`.
+- `a && b`: si `a` es falsy, sigue `a`; si no, sigue `b`.
+
+<AntesDeSeguir>
+
+¿Qué imprime cada línea?
+
+```js
+console.log(0 && "hay elementos");
+console.log("" || "anónimo");
+console.log(typeof (3 && "hay elementos"));
+console.log(null || 0);
+```
+
+<Respuesta>
+
+```
+0
+anónimo
+string
+0
+```
+
+El `0` es falsy, así que `&&` deja seguir al propio `0`, no a `false`. En la tercera sigue el
+segundo vagón, un string. La cuarta: si el primero no pasa la prueba, `||` deja seguir al segundo
+**sin inspeccionarlo**, aunque también sea falsy.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### El vagón que no sale de la cochera
+
+Segunda capa. "Cortocircuito" significa que, si la aguja ya decidió con el primer vagón, el
+segundo **ni siquiera sale de la cochera**: la expresión de la derecha no se evalúa. No es solo
+una optimización: si la derecha tiene efectos (una llamada, un `throw`, una mutación), esos
+efectos no ocurren.
+
+<AntesDeSeguir>
+
+`user` es `null`. ¿Lanza un `TypeError` esta línea? Y si no, ¿qué imprime?
+
+```js
+const user = null;
+const nombre = user && user.name;
+console.log(nombre);
+```
+
+<Respuesta>
+
+```
+null
+```
+
+No lanza: `user.name` nunca se evalúa, porque la aguja dejó seguir a `null` sin mirar el segundo
+vagón. Y fíjate en el resultado: `null`, no `undefined` ni `false`. Sigue siendo el operando.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Por eso `user && user.logout()` no llama a `logout` si `user` es `null`, e
+`isDev || console.log("prod")` solo imprime si `isDev` es falsy. Ese patrón aparece en código
+minificado, pero para efectos un `if` es más claro: usa `&&` y `||` para **expresiones**.
+
+Esta pregunta pone a prueba las dos capas a la vez: qué vagón sigue y cuántos salieron de la
+cochera.
 
 <Pregunta id="cortocircuito-perezoso" />
 
-## `??`: solo `null` y `undefined`
+### Lo que React hace con el vagón
 
-El operador de coalescencia nula `a ?? b` devuelve `b` **solo** si `a` es `null` o `undefined`. Al resto de falsy (`0`, `""`, `false`, `NaN`) los deja pasar:
+En JSX, cuando `cond` es falsy, `{cond && <Algo />}` le entrega a React el propio `cond`. Y
+React no trata igual a todos los falsy.
 
-```js
-const timeout = config.timeout ?? 3000; // 0 se respeta; null/undefined → 3000
-```
+<AntesDeSeguir>
 
-Es lo que casi siempre quieres para valores por defecto. `||` solo tiene sentido cuando de verdad quieres reemplazar **cualquier** falsy, por ejemplo un string vacío que no te sirve: `const title = input.trim() || "Sin título"`.
+`Badge` pinta `<b>nuevo</b>`. ¿Qué HTML genera React con `<p>{v && <Badge />}</p>` para cada
+valor de `v`: `0`, `""`, `false`, `null`, `NaN` y `3`?
 
-### `||`, `??` y `&&`: qué descarta cada uno
+<Respuesta>
 
-Resultado de `x OP "def"` según el valor de `x`:
+Con `0`, `<p>0</p>`; con `NaN`, `<p>NaN</p>`; con `3`,
+`<p><b>nuevo</b></p>`; con `""`, `false` y `null`, un `<p></p>` vacío.
 
-| Operador | Usa la derecha cuando la izquierda es… | `x = 0` | `x = ""` | `x = false` | `x = null` |
-|---|---|---|---|---|---|
-| `x \|\| "def"` | falsy | `"def"` | `"def"` | `"def"` | `"def"` |
-| `x ?? "def"` | `null` o `undefined` | `0` | `""` | `false` | `"def"` |
-| `x && "def"` | truthy (si es falsy, devuelve la izquierda) | `0` | `""` | `false` | `null` |
+React no pinta `false`, `null` ni `undefined`, y `""` es un texto vacío, invisible. Los
+**números** sí se pintan: el `0` y el `NaN` aparecen en pantalla.
 
-La última fila es la que muerde en React: con `&&` lo que se renderiza cuando la condición falla es **la propia izquierda**. React no pinta `false`, `null`, `undefined` ni `""` (bueno, `""` es un texto vacío, invisible), pero **sí pinta números**, así que `0` (y `NaN`) aparecen en pantalla.
+</Respuesta>
+
+</AntesDeSeguir>
+
+La solución es que el vagón de la izquierda sea un **booleano de verdad**:
 
 ```jsx
 {items.length > 0 && <List items={items} />}  // boolean: seguro
@@ -84,9 +199,61 @@ La última fila es la que muerde en React: con `&&` lo que se renderiza cuando l
 En React, el lado izquierdo de `&&` debe ser un **booleano de verdad**. Si es un número (`count`, `items.length`, `price`), compáralo explícitamente: `count > 0 && …`. En React Native es peor: un `0` suelto fuera de `<Text>` provoca un error en vez de pintarse.
 </Callout>
 
-## `?.`: encadenamiento opcional
+---
 
-`a?.b` evalúa a `undefined` (no `null`) si `a` es `null` o `undefined`, en vez de lanzar `TypeError`. Tiene tres formas:
+## `??`: la aguja que solo mira si hay vagón
+
+Tercera capa. La aguja de `??` no inspecciona el vagón: solo mira si **hay** vagón. `a ?? b`
+devuelve `b` únicamente si `a` es `null` o `undefined`, los dos valores que en JavaScript
+significan "aquí no hay nada". Al resto de falsy los deja pasar, porque un vagón vacío sigue
+siendo un vagón.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+console.log(0 || "def", 0 ?? "def");
+console.log(JSON.stringify("" ?? "def"), false ?? "def", NaN ?? "def");
+console.log(undefined ?? "def", null ?? "def");
+```
+
+<Respuesta>
+
+```
+def 0
+"" false NaN
+def def
+```
+
+`""`, `false` y hasta `NaN` pasan intactos por `??`: solo `undefined` y `null` dejan la vía
+libre al segundo vagón.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+`config.timeout ?? 3000` respeta el `0` y solo usa 3000 si falta el valor. Es lo que casi siempre
+quieres para valores por defecto. `||` solo tiene sentido cuando de verdad quieres reemplazar
+**cualquier** falsy, por ejemplo un string vacío que no te sirve:
+`const title = input.trim() || "Sin título"`.
+
+Las tres agujas, lado a lado. Resultado de `x OP "def"` según el valor de `x`:
+
+| Operador | Usa la derecha cuando la izquierda es… | `x = 0` | `x = ""` | `x = false` | `x = null` |
+|---|---|---|---|---|---|
+| `x \|\| "def"` | falsy | `"def"` | `"def"` | `"def"` | `"def"` |
+| `x ?? "def"` | `null` o `undefined` | `0` | `""` | `false` | `"def"` |
+| `x && "def"` | truthy (si es falsy, devuelve la izquierda) | `0` | `""` | `false` | `null` |
+
+---
+
+## `?.`: la barrera al inicio del ramal
+
+Cuarta capa. `user.profile.name` es un ramal con varios tramos, y si falta un vagón a mitad de
+camino, el tren descarrila con un `TypeError`. `a?.b` pone una **barrera** antes del tramo: si
+`a` es `null` o `undefined`, el ramal entero se cierra y el resultado es `undefined` (no `null`),
+sin error. Tiene tres formas:
 
 ```js
 user?.profile.name     // acceso a propiedad
@@ -94,61 +261,150 @@ user?.["display-name"] // acceso con corchetes (claves dinámicas, índices)
 props.onClose?.()      // llamada: solo llama si onClose no es null/undefined
 ```
 
-Dos detalles que importan:
+La barrera **cortocircuita toda la cadena**: en `a?.b.c.d`, si `a` es `null`, ni `.c` ni `.d` se
+evalúan. Pero solo vigila lo que tiene **a su izquierda**.
 
-- **Cortocircuita toda la cadena.** En `a?.b.c.d`, si `a` es `null`, ni `.c` ni `.d` se evalúan: el resultado es `undefined`, sin error. El `?.` protege lo que está **a su izquierda**, no lo que viene después: si `a` existe pero `a.b` es `undefined`, `a?.b.c` sí lanza.
-- **`fn?.()` solo comprueba `null`/`undefined`.** Si `onClose` es un string, `onClose?.()` lanza `TypeError: onClose is not a function`.
+<AntesDeSeguir>
 
-`?.` y `??` se combinan de forma natural: `user?.settings?.theme ?? "claro"`.
+¿Qué imprime cada línea?
+
+```js
+const sinUser = null;
+const user = { profile: undefined };
+console.log(sinUser?.profile.name);
+console.log(user?.profile.name);
+```
+
+<Respuesta>
+
+```
+undefined
+Uncaught TypeError: Cannot read properties of undefined (reading 'name')
+```
+
+En la primera, la barrera encuentra `null` y cierra el ramal entero. En la segunda, `user`
+existe y la barrera deja pasar; el problema está un tramo después, donde `profile` es
+`undefined` y no hay barrera. Si `profile` puede faltar: `user?.profile?.name`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Otro detalle: `fn?.()` solo comprueba `null`/`undefined`, no que sea una función. Si `onClose` es
+un string, `onClose?.()` lanza `TypeError: onClose is not a function`.
+
+`?.` y `??` se combinan de forma natural: `user?.settings?.theme ?? "claro"`. Esta pregunta junta
+las tres formas de `?.` y pone a prueba hasta dónde llega el cierre del ramal:
 
 <Pregunta id="cortocircuito-optional-chaining" />
 
-No abuses de `?.`: si un valor **no debería** ser nunca `null`, ponerle `?.` esconde el bug y lo convierte en un `undefined` que explota más lejos. Úsalo donde la ausencia es un caso legítimo.
+No llenes la vía de barreras: si un valor **no debería** ser nunca `null`, `?.` esconde el bug
+y lo convierte en un `undefined` que explota más lejos.
 
-## Asignaciones lógicas: `||=`, `&&=`, `??=`
+<Profundiza titulo="por qué ?.() y ?.[] y no ?() o ?[]">
 
-Son atajos que **también cortocircuitan**: si no hace falta asignar, no asignan (ni ejecutan la derecha, ni disparan un setter).
+`a?[0]:b` o `a?(x):y` ya eran ternarios, así que la propuesta usó `?.` en todas las formas para
+evitar la ambigüedad. Por lo mismo, `?.` no puede ir seguido de un dígito: `cond?.5:1` sigue
+siendo el ternario `cond ? .5 : 1`.
+
+</Profundiza>
+
+---
+
+## Asignaciones lógicas: cargar solo si hace falta
+
+Quinta capa. `||=`, `&&=` y `??=` son agujas que deciden si hay que **cargar** el vagón. Si no
+hace falta, no asignan, no evalúan la derecha y no disparan ningún setter.
 
 ```js
-opts.retries ??= 3;      // opts.retries ?? (opts.retries = 3)
-opts.label ||= "Nuevo";  // asigna si es falsy
+opts.retries ??= 3;             // opts.retries ?? (opts.retries = 3)
+opts.label ||= "Nuevo";         // asigna si es falsy
 user.name &&= user.name.trim(); // solo si ya hay un name truthy
 ```
 
-Ojo: `a ??= b` no es exactamente `a = a ?? b`. Si `a` ya tiene valor, la primera forma no asigna nada; la segunda reasigna el mismo valor (y si `a` es una propiedad con setter o de un objeto congelado, la diferencia se nota).
+Por eso `a ??= b` no es exactamente `a = a ?? b`. Si `a` ya tiene valor, la primera forma no
+asigna nada; la segunda reasigna el mismo valor, y a veces eso se nota.
+
+<AntesDeSeguir>
+
+En un módulo (modo estricto), con un objeto congelado, ¿qué imprime?
+
+```js
+const config = Object.freeze({ retries: 5 });
+config.retries ??= 3;
+console.log("??= pasó");
+config.retries = config.retries ?? 3;
+console.log("esto no se imprime");
+```
+
+<Respuesta>
+
+```
+??= pasó
+Uncaught TypeError: Cannot assign to read only property 'retries' of object '#<Object>'
+```
+
+`retries` ya vale 5, así que `??=` no asigna. La forma larga sí (aunque sea el mismo 5), y en
+modo estricto asignar a una propiedad de solo lectura lanza. Con un setter pasa igual: `??=` no
+lo llama, la forma larga sí.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Esta pregunta compara `||=` y `??=` sobre una configuración con `0`, `null` y `""`, el mismo
+terreno que el timeout del ticket:
 
 <Pregunta id="cortocircuito-asignacion-logica" />
 
-## Precedencia: `??` no se mezcla
+---
 
-`&&` tiene más precedencia que `||` (`a || b && c` es `a || (b && c)`), y `??` tiene menos que ambos. Pero en lugar de dejarte adivinar, la especificación **prohíbe** mezclar `??` con `||` o `&&` sin paréntesis:
+## Dos agujas en el mismo cruce
+
+Sexta capa: ¿qué pasa cuando encadenas agujas distintas? `&&` tiene más precedencia que `||`, así
+que `a || b && c` es `a || (b && c)`: `true || false && false` da `true`, mientras que
+`(true || false) && false` da `false`. `??` tiene menos precedencia que ambos.
+
+Pero con `??` la especificación no te deja adivinar: **prohíbe** mezclarlo con `||` o `&&` sin
+paréntesis. La aguja de `??` y la de `||` usan criterios distintos, y en un cruce así el lenguaje
+exige señalizarlo:
 
 ```js
 const port = env.PORT || config.port ?? 8080;   // SyntaxError
 const port = (env.PORT || config.port) ?? 8080; // OK
 ```
 
-Al ser un error de sintaxis, el módulo entero ni siquiera se carga.
+Al ser un error de sintaxis, el archivo falla al parsearse y el módulo entero ni siquiera se
+carga: por eso cayeron todas las páginas que lo importaban, y no solo el cliente HTTP. Esta
+pregunta pone a prueba justo eso:
 
 <Pregunta id="cortocircuito-mezclar-nullish" />
 
-## Control de flujo: lo que conviene mirar dos veces
+---
 
-Ya sabes escribir `if`, `for` y `while`. Lo interesante son los bordes.
+## De la aguja a la red de vías
 
-### `if`/`else` y el ternario
+Hasta ahora, agujas sueltas dentro de una expresión. El control de flujo es la red completa:
+bifurcaciones, salidas, patios y circuitos. Ya sabes escribir `if`, `for` y `while`; lo
+interesante son los bordes.
 
-El ternario `cond ? a : b` es una **expresión** (devuelve un valor), por eso es la herramienta natural dentro de JSX, donde no puedes poner un `if`. Pero anidarlo se vuelve ilegible enseguida:
+### Bifurcaciones: `if`/`else` y el ternario
+
+El ternario `cond ? a : b` es una aguja con dos vagones preparados: una **expresión** que
+devuelve un valor. Por eso es la herramienta natural dentro de JSX, donde no puedes poner un
+`if`. Pero anidarlo se vuelve ilegible enseguida:
 
 ```js
 const label = status === "ok" ? "Listo" : status === "error" ? "Falló" : status === "loading" ? "Cargando" : "—";
 ```
 
-A partir de dos niveles, extrae una función con `if`/`return` o un `switch`, o usa un objeto como tabla: `const labels = { ok: "Listo", error: "Falló" }; labels[status] ?? "—"`.
+A partir de dos niveles, extrae una función con `if`/`return` o un `switch`, o usa un objeto como
+tabla: `const labels = { ok: "Listo", error: "Falló" }; labels[status] ?? "—"`.
 
-### Guard clauses (return temprano)
+### Salidas antes de la línea principal: guard clauses
 
-En vez de anidar el "camino feliz" dentro de varios `if`, sal pronto de los casos especiales:
+En vez de meter el "camino feliz" dentro de varios `if` anidados, desvía pronto los casos
+especiales con un return temprano (*guard clause*):
 
 ```js
 function discount(user, cart) {
@@ -160,11 +416,50 @@ function discount(user, cart) {
 }
 ```
 
-Cada condición se lee de forma independiente y el código principal queda al nivel de la función. Es el mismo patrón que usas en un componente cuando haces `if (isLoading) return <Spinner />;` antes del JSX principal (eso sí, siempre **después** de llamar a todos los hooks).
+El código principal queda al nivel de la función. Es el mismo patrón que usas en un componente con `if (isLoading) return <Spinner />;` antes del
+JSX principal (eso sí, siempre **después** de llamar a todos los hooks).
 
-### `switch`: comparación estricta y fallthrough
+### El patio de maniobras: `switch`
 
-`switch` compara con `===`, así que `case 2` no coincide con `"2"` (un clásico cuando el valor viene de un `<select>` o de la URL, que siempre son strings). Y cada `case` **sigue ejecutando los siguientes** hasta encontrar un `break` o `return`: eso es el *fallthrough*.
+`switch` es un patio de maniobras: el tren entra por la vía cuyo letrero coincide **exactamente**
+con su valor, porque `switch` compara con `===`. Y no hay topes entre vías: una vez dentro, sigue
+rodando por los `case` siguientes hasta un `break` o un `return`. Eso es el *fallthrough*.
+
+<AntesDeSeguir>
+
+La cuarta pregunta del ticket, reducida. ¿Qué imprime?
+
+```js
+const vista = new URLSearchParams("?vista=2").get("vista");
+let titulo;
+switch (vista) {
+  case 1:
+    titulo = "Lista";
+    break;
+  case 2:
+    titulo = "Tarjetas";
+    break;
+  default:
+    titulo = "Por defecto";
+}
+console.log(titulo);
+```
+
+<Respuesta>
+
+```
+Por defecto
+```
+
+`vista` vale `"2"`, y `"2" === 2` es `false`. Lo que llega de la URL o de un `<select>` es
+siempre un string.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+El fallthrough es útil para agrupar varios letreros que llevan al mismo bloque; en cualquier
+otro sitio casi siempre es un `break` olvidado:
 
 ```js
 switch (country) {
@@ -178,17 +473,52 @@ switch (country) {
 }
 ```
 
-El fallthrough es útil para agrupar casos vacíos; en cualquier otro sitio casi siempre es un `break` olvidado. Dentro de una función, terminar cada `case` con `return` evita el problema. Otro detalle: todos los `case` comparten un único bloque, así que `const x` en dos `case` distintos da `SyntaxError` por redeclaración; envuelve el contenido del `case` en `{ }` si declaras variables.
+Dentro de una función, terminar cada `case` con `return` evita el problema. Otro detalle: todos
+los `case` comparten un único bloque, así que `const x` en dos `case` distintos da `SyntaxError`
+por redeclaración; envuelve el contenido del `case` en `{ }` si declaras variables.
+
+Esta pregunta junta las dos reglas del patio, `===` y fallthrough:
 
 <Pregunta id="control-switch-fallthrough" />
 
-### `for`, `for...of` y `for...in`
+### Circuitos: `for`, `for...of` y `for...in`
 
-- `for (let i = 0; i < n; i++)`: cuando necesitas el índice, recorrer al revés o saltar de dos en dos.
-- `for (const x of iterable)`: recorre los **valores** de cualquier iterable: arrays, strings (por carácter Unicode, no por unidad UTF-16), `Map`, `Set`, `arguments`, `NodeList`… Funciona con `break`, `continue`, `return` y `await`, cosa que `forEach` no.
-- `for (const k in obj)`: recorre las **claves enumerables** de un objeto, **incluidas las heredadas** por la cadena de prototipos, y siempre como strings.
+- `for (let i = 0; i < n; i++)`: cuando necesitas el índice, recorrer al revés o saltar de dos
+  en dos.
+- `for (const x of iterable)`: recorre los **vagones**, es decir, los valores de cualquier
+  iterable: arrays, strings, `Map`, `Set`, `arguments`, `NodeList`… Funciona con `break`,
+  `continue`, `return` y `await`, cosa que `forEach` no.
+- `for (const k in obj)`: lee los **letreros**, es decir, las claves enumerables de un objeto,
+  **incluidas las heredadas** por la cadena de prototipos, y siempre como strings.
 
-`for...in` en un array es un error: te da índices como strings (`"0" + 1` es `"01"`), incluye cualquier propiedad extra y, si alguien añadió algo enumerable a `Array.prototype`, también eso. Para objetos, prefiere `Object.keys(obj)` o `Object.entries(obj)` con `for...of`: solo devuelven propiedades propias.
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const texto = "ok👍";
+let vueltas = 0;
+for (const c of texto) vueltas++;
+console.log(texto.length, vueltas);
+```
+
+<Respuesta>
+
+```
+4 3
+```
+
+`length` cuenta unidades UTF-16, y el emoji ocupa dos. `for...of` recorre los strings por
+carácter Unicode (punto de código), así que el emoji es una sola vuelta.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+`for...in` en un array es un error: te da los índices como strings (`"0" + 1` es `"01"`), incluye
+cualquier propiedad extra y, si alguien añadió algo enumerable a `Array.prototype`, también eso.
+Para objetos, prefiere `Object.keys(obj)` o `Object.entries(obj)` con `for...of`: solo devuelven
+propiedades propias.
 
 ```js
 for (const [key, value] of Object.entries(user)) {
@@ -196,13 +526,18 @@ for (const [key, value] of Object.entries(user)) {
 }
 ```
 
+Esta pregunta pone a prueba la diferencia entre leer letreros y recorrer vagones:
+
 <Pregunta id="control-for-in-array" />
 
 ### `while`, `do...while`, `break` y `continue`
 
-`while` comprueba la condición antes de cada vuelta; `do...while` ejecuta el cuerpo al menos una vez (útil para "pedir hasta que sea válido" o paginar una API hasta que no haya más páginas). `break` sale del bucle y `continue` salta a la siguiente iteración.
+`while` comprueba la condición antes de cada vuelta; `do...while` ejecuta el cuerpo al menos una
+vez (útil para "pedir hasta que sea válido" o paginar una API hasta que no haya más páginas).
+`break` sale del bucle y `continue` salta a la siguiente iteración.
 
-Con bucles anidados, `break` solo sale del interior. Para salir de ambos existen las **etiquetas**:
+Con bucles anidados, `break` solo sale del interior. Para salir de ambos existen las
+**etiquetas**:
 
 ```js
 outer: for (const row of grid) {
@@ -212,27 +547,60 @@ outer: for (const row of grid) {
 }
 ```
 
-Funcionan, pero se ven poco: normalmente es más claro extraer el bucle a una función y hacer `return`.
+Funcionan, pero suele ser más claro extraer el bucle a una función y hacer `return`.
 
 <Callout type="clave">
-`&&` y `||` eligen un **operando**, no producen un booleano; `??` solo reemplaza `null`/`undefined`; `?.` corta toda la cadena. Y para el flujo: guard clauses en vez de pirámides, `switch` compara con `===` y cae al siguiente `case` sin `break`, `for...of` para valores y nunca `for...in` en arrays.
+`&&` y `||` son agujas: eligen un **operando**, no producen un booleano. `??` solo mira si hay vagón (`null`/`undefined`); `?.` cierra el ramal entero. Y para la red: guard clauses en vez de pirámides, `switch` compara con `===` y cae al siguiente `case` sin `break`, `for...of` para valores y nunca `for...in` en arrays.
 </Callout>
 
-## Práctica
+---
+
+## El ticket #252, resuelto
+
+**¿Por qué `&&` pinta un `0`?** Porque `&&` es una aguja, no un semáforo: con la bandeja vacía,
+`items.length` es `0`, falsy, y la aguja deja seguir al propio `0`. React no pinta `false` ni
+`null`, pero los números sí. El arreglo: `items.length > 0 && <List items={items} />`.
+
+**¿Por qué `||` descarta el `0`?** Porque la aguja de `||` inspecciona el vagón, y `0` no pasa la
+prueba de truthy. `||` es el viejo idioma de los valores por defecto, y este es justo el bug que
+motivó `??`. El arreglo: `config.timeout ?? 3000`.
+
+**¿Por qué el arreglo del compañero tumba el módulo?** Porque mezcla `||` y `??` sin paréntesis,
+y la especificación lo prohíbe: es un `SyntaxError` que impide cargar el archivo entero. Además,
+el `||` del medio seguía descartando un `0` en `options.timeout`. Lo que de verdad quería es
+`options.timeout ?? config.timeout ?? 3000`: encadenar `??` consigo mismo sí está permitido.
+
+**¿Por qué `?vista=2` no entra en `case 2`?** La URL da strings y `switch` compara con `===`:
+`Number(vista)` antes, o `case` con strings.
+
+---
+
+## Práctica: cerrar el ticket
+
+El cliente HTTP necesita completar su configuración respetando `0`, `""` y `false`, sin explotar
+si falta `options` u `options.ui`, y llamar al manejador de errores solo si existe. Este ejercicio pone a prueba `??` y `?.`
+juntos, sin un solo `if`:
 
 <Ejercicio id="cortocircuito-with-defaults" />
 
+En la revisión del PR, alguien señala otra función del mismo repositorio: `shippingCost`, una
+pirámide de `if` anidados con `for...in`, `==` y un país que se olvidó. Este ejercicio pone a
+prueba la red completa: guard clauses, un `switch` con casos agrupados y `for...of`:
+
 <Ejercicio id="control-guard-clauses" />
 
-## Resumen
+---
 
-- `a || b` devuelve `a` si es truthy; `a && b` devuelve `a` si es falsy. Nunca convierten a booleano.
-- La parte derecha solo se evalúa si hace falta (evaluación perezosa): sus efectos pueden no ocurrir.
-- `??` solo descarta `null` y `undefined`: úsalo para valores por defecto que respeten `0`, `""` y `false`.
-- En JSX, la izquierda de `&&` debe ser booleana: `items.length > 0 && …`, nunca `items.length && …`.
-- `?.`, `?.[]` y `?.()` devuelven `undefined` y cortocircuitan el resto de la cadena.
-- `||=`, `&&=` y `??=` solo asignan cuando hace falta; `??=` es el que respeta el `0`.
-- Mezclar `??` con `||`/`&&` sin paréntesis es un `SyntaxError`.
-- Guard clauses para los casos especiales; ternarios solo de un nivel.
-- `switch` compara con `===` y hace fallthrough sin `break`.
-- `for...of` recorre valores de iterables; `for...in` recorre claves (strings, también heredadas): no lo uses en arrays.
+## Lo que ahora puedes explicar
+
+Si alguien pregunta por qué aparece un `0` en pantalla, ya no respondes "cosa de React": `&&` y
+`||` no encienden luces, mueven agujas, y el vagón que sale es uno de los que entraron. Sabes
+que la derecha solo se evalúa si la aguja la elige, qué hueco llenaron `??` y `?.` en ES2020,
+por qué `??=` no es la asignación larga y por qué mezclar `??` con `||` ni siquiera se parsea. Y en la red,
+que `switch` compara con `===` sin topes entre `case`, y que `for...in` lee letreros mientras
+`for...of` recorre vagones.
+
+Quedan dos cabos sueltos: viste que todos los `case` comparten un bloque y que dos `const` iguales
+chocan, y que un parámetro por defecto solo se activa con `undefined`. El primero tiene que ver
+con **dónde vive una variable** (el alcance de bloque de `let` y `const`); el segundo, con **cómo
+entra un valor en una función**. Las dos cosas son la siguiente lección: «Variables y funciones».

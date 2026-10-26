@@ -8,9 +8,9 @@ export const closures: LessonDef = {
   slug: "closures",
   title: "Closures",
   summary:
-    "Por qué un setInterval dentro de useEffect se queda atascado: funciones que recuerdan el scope donde nacieron.",
+    "Un contador que se queda en 1 te lleva al scope léxico y a los closures: funciones que guardan la llave del entorno donde nacieron, y por qué cada render de React tiene el suyo.",
   concepts: ["js.closures", "react.stale-closures"],
-  minutes: 35,
+  minutes: 40,
   questions: preguntas,
   exercises: [once, contador],
   videos: [
@@ -32,6 +32,8 @@ export const closures: LessonDef = {
   sources: [
     { title: "MDN: Closures", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Guide/Closures" },
     { title: "react.dev: El estado como una instantánea", url: "https://es.react.dev/learn/state-as-a-snapshot" },
+    { title: "Brendan Eich: Popularity (2008)", url: "https://brendaneich.com/2008/04/popularity/" },
+    { title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020)", url: "https://dl.acm.org/doi/10.1145/3386327" },
     { title: "react.dev: Actualizar el estado basándote en el anterior", url: "https://es.react.dev/reference/react/useState#updating-state-based-on-the-previous-state" },
   ],
   reviewed: { date: "2026-10-12", versions: { react: "19.3", node: "22" } },

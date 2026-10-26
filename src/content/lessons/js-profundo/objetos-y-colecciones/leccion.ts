@@ -8,9 +8,9 @@ export const objetosYColecciones: LessonDef = {
   slug: "objetos-y-colecciones",
   title: "Objetos y colecciones",
   summary:
-    "Por qué un find dentro de un map vuelve lenta una lista: objetos a fondo, Map y Set como diccionarios, e iteradores y generadores.",
+    "Por qué un objeto hizo de diccionario durante años y dónde falla (orden de claves, claves de papel, propiedades heredadas), qué arreglan Map, Set y WeakMap, y cómo funcionan iteradores y generadores.",
   concepts: ["js.objetos-avanzado", "js.map-set", "js.iteradores-generadores"],
-  minutes: 40,
+  minutes: 50,
   questions: preguntas,
   exercises: ejercicios,
   videos: [

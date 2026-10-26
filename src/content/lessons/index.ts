@@ -7,6 +7,11 @@ import { objetosArraysJson } from "./js-fundamentos/objetos-arrays-json/leccion"
 import { metodosDeArray } from "./js-fundamentos/metodos-de-array/leccion";
 import { destructuringYSpread } from "./js-fundamentos/destructuring-y-spread/leccion";
 import { closures } from "./js-profundo/closures/leccion";
+import { eventLoop } from "./asincronia/event-loop/leccion";
+import { promesas } from "./asincronia/promesas/leccion";
+import { asyncAwait } from "./asincronia/async-await/leccion";
+import { fetchYCancelacion } from "./asincronia/fetch-y-cancelacion/leccion";
+import { raceConditionsYDebounce } from "./asincronia/race-conditions-y-debounce/leccion";
 import { scopeYHoisting } from "./js-profundo/scope-y-hoisting/leccion";
 import { valoresYReferencias } from "./js-profundo/valores-y-referencias/leccion";
 import { thisLesson } from "./js-profundo/this/leccion";
@@ -26,13 +31,18 @@ export const lessons: readonly LessonDef[] = [
   objetosArraysJson,
   metodosDeArray,
   destructuringYSpread,
-  scopeYHoisting,
   closures,
+  scopeYHoisting,
   valoresYReferencias,
   thisLesson,
   prototiposYClases,
   objetosYColecciones,
   modulosYErrores,
+  eventLoop,
+  promesas,
+  asyncAwait,
+  fetchYCancelacion,
+  raceConditionsYDebounce,
 ];
 
 /**
@@ -40,7 +50,7 @@ export const lessons: readonly LessonDef[] = [
  * publicado esté cubierto por al menos una lección, una pregunta y un ejercicio.
  * Se añade un módulo aquí cuando está completo.
  */
-export const publishedModules: readonly string[] = ["m02", "m03"];
+export const publishedModules: readonly string[] = ["m02", "m03", "m05"];
 
 export function lessonsForModule(moduleId: string): LessonDef[] {
   return lessons.filter((l) => l.moduleId === moduleId);

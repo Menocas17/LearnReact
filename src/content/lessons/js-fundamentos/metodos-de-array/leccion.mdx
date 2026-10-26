@@ -1,6 +1,14 @@
-## El problema
+## La lista que se desordenaba sola
 
-Tienes un catálogo que llega de una API y hay que pintarlo: filtrado por un buscador, ordenado por nombre y agrupado por categoría. Una primera versión "a mano" suele quedar así:
+La tienda tiene dos componentes que reciben el mismo array `products` de la API, que llega
+ordenado del más nuevo al más antiguo: un catálogo con buscador y, en la barra lateral, un panel
+de "Recién llegados" que pinta los dos primeros. Hoy hay un ticket:
+
+> **#664 — "El catálogo ordena raro y 'Recién llegados' muestra productos viejos".** En el
+> catálogo, "agua mineral" y "Ñoquis" aparecen al final, detrás de "Zumo". Y en cuanto el
+> catálogo se pinta, el panel lateral deja de mostrar las novedades. Nadie ha tocado el panel.
+
+El catálogo está escrito "a mano":
 
 ```jsx
 function ProductList({ products, search }) {
@@ -28,13 +36,612 @@ function ProductList({ products, search }) {
 }
 ```
 
-Funciona… más o menos. Tiene tres bugs escondidos:
+Funciona… más o menos. Hay que leer veinte líneas para saber qué hace, y esconde tres bugs.
+Cuatro preguntas:
 
-1. `products.sort(…)` **ordena las props en el sitio**. Estás mutando datos que no son tuyos (del padre, del estado, de la caché de React Query o SWR).
-2. Comparar con `>` ordena por código de carácter: "Zoe" va antes que "ana", y "Óscar" queda al final, detrás de la "z".
-3. El comparador nunca devuelve `0`, así que no es un comparador válido (más abajo verás por qué importa).
+1. ¿Cómo puede el catálogo cambiar lo que ve **otro** componente, si no llama a ningún `setState`?
+2. ¿Por qué "agua mineral" y "Ñoquis" quedan detrás de "Zumo"?
+3. El comparador "funciona": ¿qué tiene de malo que nunca devuelva `0`?
+4. ¿Cómo se escribe esto para que cada línea diga **qué** se quiere y no **cómo** recorrer índices?
 
-Y además hay que leer 20 líneas para entender qué hace. La misma lógica con métodos de array:
+Ya usas `map` y `filter` a diario en JSX. Esta lección va de lo que no se ve a simple vista.
+
+---
+
+## De dónde vienen map, filter y reduce
+
+`map`, `filter` y `reduce` no los inventó JavaScript. Vienen de la **programación funcional**,
+la tradición de Lisp y, más tarde, de lenguajes como Haskell: en lugar de escribir el bucle
+(índice, condición, incremento, `push`), le pasas a una función otra función que dice qué hacer
+con **cada** elemento, y el recorrido es asunto de la función. Es justo lo que viste en "Variables
+y funciones": máquinas entregadas a otras máquinas.
+
+Al principio, JavaScript no los tenía: todo era `for` con índices. Firefox los añadió
+primero como extensión propia y bibliotecas como Prototype ofrecían sus versiones, hasta que
+**ES5 (2009)** los estandarizó: `forEach`, `map`, `filter`, `reduce`, `some`, `every`, `indexOf`.
+Después llegaron por capas: `find`, `findIndex` y `Array.from` en ES2015; `includes` en ES2016;
+`flat`, `flatMap` y la ordenación estable en ES2019; `findLast` y las versiones que copian
+(`toSorted`, `toReversed`, `toSpliced`, `with`) en ES2023; `Object.groupBy` en ES2024.
+
+¿Por qué en 2023 se añadió `toSorted` en lugar de arreglar `sort` para que no mute? Por la misma
+regla que viste con `var`: **la web no se puede romper**. Hay muchísimo código que depende de que
+`sort` ordene en el sitio, así que el comportamiento viejo se queda y el nuevo llega con otro
+nombre.
+
+<Profundiza titulo="cuando un nombre rompe la web: flatten y contains">
+
+La regla de no romper la web no es teórica. `flat` iba a llamarse `flatten`, pero al probarlo en
+navegadores se descubrió que rompía páginas que usaban la biblioteca MooTools: esta definía su
+propio `Array.prototype.flatten` no estándar, y con el método nativo presente su código dejaba de
+copiarlo a otros objetos que lo necesitaban. El comité eligió otro nombre (el episodio se conoce
+como *SmooshGate*, por una propuesta medio en broma de llamarlo `smoosh`). Con `includes` pasó
+algo parecido: se propuso como `contains`, pero ese nombre también rompía sitios con MooTools, y
+se renombró.
+
+</Profundiza>
+
+---
+
+## La cadena de montaje
+
+En "Objetos, arrays y JSON", el array era una caja con etiquetas numeradas sobre la mesa de
+trabajo. Para esta lección, despliégala: la imagen es una **cinta transportadora** con sus
+elementos en fila, como cajas, y cada método es una **estación** de una cadena de montaje. A cada estación le entregas una máquina (el
+*callback*, la función que le pasas) que dice qué hacer con cada caja.
+
+La pregunta que hay que hacerse en cada estación tiene dos partes: **¿qué sale por el otro
+lado?** (otra cinta, una sola caja, un sí o un no, nada) y **¿toca la cinta original o trabaja
+sobre una copia?** Este es el mapa completo; el resto de la lección lo recorre estación por
+estación.
+
+| Método | Devuelve | ¿Muta? |
+|---|---|---|
+| `map(fn)` | Array nuevo, **misma longitud** | No |
+| `filter(fn)` | Array nuevo con los que pasan (puede ser `[]`) | No |
+| `find(fn)` / `findLast(fn)` | El primer / último elemento que cumple, o `undefined` | No |
+| `findIndex(fn)` / `findLastIndex(fn)` | Índice, o `-1` | No |
+| `some(fn)` / `every(fn)` | Booleano | No |
+| `includes(x)` | Booleano | No |
+| `reduce(fn, inicial)` | Un valor cualquiera (número, objeto, Map…) | No |
+| `flat(n)` / `flatMap(fn)` | Array nuevo aplanado | No |
+| `forEach(fn)` | `undefined` | No (pero suele usarse para efectos) |
+| `sort(fn)` / `reverse()` | **El mismo array** | **Sí** |
+| `toSorted(fn)` / `toReversed()` | Array nuevo | No |
+| `push`, `pop`, `shift`, `unshift`, `splice` | Longitud o elementos quitados | **Sí** |
+
+La regla práctica en React: el estado y las props se tratan como inmutables, así que dentro de un
+componente solo usas la columna "No".
+
+---
+
+## Primera estación: map transforma cada caja
+
+`map` toma cada caja, la pasa por tu máquina y pone **lo que salga** en una cinta nueva. Una caja
+entra, una caja sale: el array resultante es **exactamente igual de largo**. Si quieres menos
+elementos, no es `map`: es `filter` (o `flatMap`, que verás más adelante).
+
+<AntesDeSeguir>
+
+Alguien intenta "saltarse" los números pequeños devolviendo `null`. ¿Qué imprime?
+
+```js
+const result = [3, 8, 1].map((n) => (n > 2 ? n * 10 : null));
+console.log(result.length);
+console.log(result.join(","));
+```
+
+<Respuesta>
+
+```
+3
+30,80,
+```
+
+`map` no puede quitar cajas: el `null` ocupa su sitio en la cinta nueva (y `join` lo escribe como
+vacío, de ahí la coma final). En JSX un `null` no se pinta, así que "funciona"; en datos, ese
+`null` se cuela en cálculos y longitudes.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Un detalle de la estación que casi nadie mira: el operario no le entrega a tu máquina solo la
+caja. Le da **tres** cosas: `(item, index, array)`, la caja, su posición y la cinta entera.
+Normalmente tu máquina ignora las dos últimas, pero llegan siempre, y eso tiene consecuencias
+cuando entregas una función ya hecha por referencia. Esta pregunta pone a prueba qué pasa al
+entregarle `parseInt`, que sí usa su segundo argumento:
+
+<Pregunta id="arrays-metodos-map-parseint" />
+
+<Callout type="cuidado">
+`arr.map(fn)` solo equivale a `arr.map((x) => fn(x))` si `fn` ignora sus argumentos extra. `parseInt` (que usa el segundo como base) o tus propias funciones con parámetros opcionales no los ignoran. `map(Number)` sí es seguro: `Number` solo usa el primer argumento.
+</Callout>
+
+En React, `map` es la forma de pintar listas, y cada elemento necesita una `key` estable (el `id`
+de la API), no el `index`: si la lista se filtra o reordena, el índice cambia de caja y React
+reutiliza el estado equivocado.
+
+---
+
+## Segunda estación: los inspectores
+
+Hay estaciones que no transforman: **inspeccionan**. La diferencia entre ellas está en lo que
+sale.
+
+- `filter` es una compuerta: deja pasar a una cinta nueva las cajas que cumplen y descarta las
+  demás. Devuelve **siempre** un array, aunque esté vacío.
+- `find` para la cinta en la primera caja que cumple y te la entrega **a ella**, no una cinta. Si
+  ninguna cumple, devuelve `undefined`.
+- `findIndex` hace lo mismo pero te da la posición, o `-1` si no encuentra nada.
+
+Esa diferencia decide cómo escribes el código de después:
+
+```js
+const admins = users.filter((u) => u.role === "admin"); // [] si no hay: admins.map(...) es seguro
+const me = users.find((u) => u.id === currentId);       // undefined si no está: me.name puede romper
+```
+
+`findLast` y `findLastIndex` (ES2023) recorren la cinta desde el final, útil para "el último
+mensaje sin leer" sin invertir el array.
+
+Esta pregunta pone a prueba qué entrega cada inspector cuando ninguna caja cumple:
+
+<Pregunta id="arrays-metodos-find-vs-filter" />
+
+<AntesDeSeguir>
+
+Tres comprobaciones que parecen obvias. ¿Qué imprime?
+
+```js
+const roles = ["admin", "editor"];
+const i = roles.findIndex((r) => r === "admin");
+if (i) {
+  console.log("encontrado en", i);
+} else {
+  console.log("no encontrado");
+}
+console.log([NaN].includes(NaN), [NaN].indexOf(NaN));
+const users = [{ id: 1 }];
+console.log(users.includes({ id: 1 }), users.some((u) => u.id === 1));
+```
+
+<Respuesta>
+
+```
+no encontrado
+true -1
+false true
+```
+
+- `"admin"` está en la posición `0`, y `0` es falsy: `if (index)` dice "no encontrado" justo
+  cuando está el primero, y en cambio `-1` es truthy. Compara siempre con `!== -1`.
+- `includes` compara con *SameValueZero*: funciona con primitivos y encuentra `NaN`, cosa que
+  `indexOf` (que usa `===`) no hace.
+- Con objetos, `includes` compara **referencias**: `{ id: 1 }` es una caja nueva, distinta de la
+  que hay en la cinta aunque tenga lo mismo dentro. Para buscar por contenido está
+  `some((u) => u.id === 1)`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### Los inspectores de sí o no
+
+`some` responde "¿alguna caja cumple?" y `every` "¿todas cumplen?". Lo que sale es un booleano, y
+ambos **cortan** en cuanto conocen la respuesta: `some` en el primer `true`, `every` en el primer
+`false`.
+
+<AntesDeSeguir>
+
+¿Cuántas veces se llama a la máquina?
+
+```js
+let calls = 0;
+const hasBig = [1, 5, 2, 8].some((n) => {
+  calls++;
+  return n > 4;
+});
+console.log(hasBig, calls);
+```
+
+<Respuesta>
+
+```
+true 2
+```
+
+Con la segunda caja (`5 > 4`) la respuesta ya es "sí": las cajas `2` y `8` ni se miran. Es el
+mismo cortocircuito de `||` y `&&` que viste en "Cortocircuito y control de flujo", aplicado a
+una cinta entera.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+La trampa está en la cinta vacía: `every` devuelve `true` (no hay ningún contraejemplo) y `some`
+devuelve `false`. Es lógica matemática correcta, pero en una UI puede ser un bug: "todas las
+tareas completadas ✔" cuando no hay tareas.
+
+```js
+const allDone = tasks.length > 0 && tasks.every((t) => t.done);
+```
+
+---
+
+## Tercera estación: reduce, la caja de embalaje
+
+Al final de algunas cadenas no sale otra cinta, sino **un solo paquete**: un total, un objeto, un
+`Map`. Esa estación es `reduce`. Lleva un **acumulador** (el paquete a medio hacer): tu máquina
+recibe `(acc, item, index, array)` y lo que devuelva será el `acc` de la siguiente vuelta.
+
+```js
+const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+```
+
+El segundo argumento es el **valor inicial**: la caja vacía con la que empieza el embalaje. Es
+opcional según la especificación, pero en la práctica pásalo siempre.
+
+<AntesDeSeguir>
+
+¿Qué imprime cada línea?
+
+```js
+const cart = [{ price: 2 }, { price: 3 }];
+console.log(cart.reduce((sum, item) => sum + item.price));
+console.log(cart.reduce((sum, item) => sum + item.price, 0));
+```
+
+<Respuesta>
+
+```
+[object Object]3
+5
+```
+
+Sin valor inicial, `reduce` usa **la primera caja** como acumulador y empieza en la segunda. Con
+un array de objetos, el acumulador inicial es un objeto, y `objeto + número` lo convierte a
+string: basura. El segundo problema es peor: con un array vacío no hay primera caja con la que
+empezar, y lanza un error.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Esta pregunta junta las dos trampas de la cinta vacía: `every`/`some` sobre `[]` y `reduce` con y
+sin valor inicial.
+
+<Pregunta id="arrays-metodos-array-vacio" />
+
+Donde `reduce` brilla es en convertir un array en **otra estructura**: contar, agrupar o indexar.
+
+```js
+// Contar por estado
+const counts = orders.reduce((acc, o) => {
+  acc[o.status] = (acc[o.status] ?? 0) + 1;
+  return acc;
+}, {});
+
+// Indexar por id: buscar luego es O(1) en vez de un find por cada elemento
+const byId = users.reduce((acc, u) => {
+  acc[u.id] = u;
+  return acc;
+}, {});
+```
+
+El último patrón importa en React: un `posts.map((p) => users.find((u) => u.id === p.authorId))`
+recorre `users` una vez **por cada post**. Con un índice (`byId[p.authorId]`, o un `Map`) es un
+acceso directo. Para indexar también puedes usar `Object.fromEntries(users.map((u) => [u.id, u]))`
+o `new Map(users.map((u) => [u.id, u]))`, que suelen leerse mejor.
+
+Esta pregunta pone a prueba un conteo con `reduce` (incluido el primer `undefined` de cada clave)
+junto a un `flatMap`, que verás enseguida:
+
+<Pregunta id="arrays-metodos-reduce-agrupar" />
+
+<Callout type="clave">
+Usa `reduce` cuando el resultado es **un valor de otra forma** (un número, un objeto, un Map). Si el resultado es un array del mismo tipo, casi siempre hay un método más claro: `map`, `filter`, `flatMap`. Y si un `reduce` necesita tres líneas de comentario para entenderse, un `for…of` con una variable es perfectamente válido: la legibilidad gana.
+</Callout>
+
+### Una estación de embalaje ya montada: Object.groupBy
+
+Agrupar es tan habitual que desde ES2024 hay un método nativo (Node 21+, navegadores desde
+2023–2024):
+
+```js
+const byCategory = Object.groupBy(products, (p) => p.category);
+// { bebidas: [...], despensa: [...] }
+```
+
+Dos detalles: el objeto devuelto tiene **prototipo `null`** (no hereda `toString`,
+`hasOwnProperty`…; `Object.entries` y `Object.keys` funcionan sin problema), y si las claves no
+son strings o necesitas mantener el tipo, existe `Map.groupBy`, que devuelve un `Map`. En
+TypeScript necesitas `"lib": ["ES2024"]` (o posterior) en el `tsconfig` para que lo reconozca. Si
+tienes que soportar entornos antiguos, el `reduce` de arriba hace lo mismo.
+
+---
+
+## Cuarta estación: el operario que reordena la cinta original
+
+Todas las estaciones hasta ahora dejan la cinta original intacta. `sort` no. Es el operario que se
+mete **en la cinta original** y cambia las cajas de sitio, y tiene tres comportamientos que
+sorprenden:
+
+1. **Muta** el array y devuelve el **mismo** array (no una copia).
+2. Sin comparador, convierte los elementos a string y los compara por unidades de código UTF-16.
+3. El comparador debe devolver un **número**: negativo si `a` va antes, positivo si va después y
+   `0` si da igual. Para números es `a - b` (ascendente) o `b - a` (descendente).
+
+¿Por qué comparar como strings por defecto? Porque un array puede mezclar cualquier cosa (números,
+strings, `null`, objetos), y convertir a string es una comparación que sirve para todos. Casi
+nunca es lo que quieres con números.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const prices = [10, 1, 5, 25];
+const sorted = prices.sort();
+console.log(sorted.join(","));
+console.log(sorted === prices, prices.join(","));
+```
+
+<Respuesta>
+
+```
+1,10,25,5
+true 1,10,25,5
+```
+
+Como strings, `"10"` va antes que `"5"` por la misma razón que "ba" va antes que "c": se compara
+carácter a carácter. Y `sorted` no es una cinta nueva: es **la misma**, ya reordenada.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Devolver un booleano (`a > b`) tampoco sirve como comparador: `false` se convierte en `0`
+("iguales") y `true` en `1`, nunca negativo, así que el comparador es inconsistente y el resultado
+depende del motor. El `? 1 : -1` del ticket tiene el problema contrario: nunca devuelve `0`. Con
+dos nombres iguales, `compare(a, b)` da `-1` ("`a` va antes") y `compare(b, a)` también da `-1`
+("`b` va antes"): cada uno se declara anterior al otro, y el comparador vuelve a ser inconsistente.
+
+Esta pregunta pone a prueba qué pasa cuando una función auxiliar "solo ordena" las props:
+
+<Pregunta id="arrays-metodos-sort-muta" />
+
+En React, `sort` sobre props o estado es un bug real: mutas datos compartidos (del padre, del
+estado, de la caché de React Query o SWR) y, si lo haces sobre el estado, React puede no detectar
+el cambio porque la referencia es la misma. La solución moderna es `toSorted` (ES2023, Node 20+),
+que trabaja sobre **una copia de la cinta**; la clásica, `[...list].sort(…)`. Lo mismo con
+`toReversed` frente a `reverse`.
+
+<Profundiza titulo="la familia que copia: toSorted, toReversed, toSpliced y with">
+
+ES2023 añadió cuatro métodos que hacen lo mismo que sus parientes mutantes, pero devolviendo un
+array nuevo: `toSorted` (por `sort`), `toReversed` (por `reverse`), `toSpliced` (por `splice`) y
+`with(index, value)`, que es la versión sin mutar de `arr[index] = value`.
+
+```js
+const novedades = ["Té", "Café", "Agua"];
+novedades.toSorted((a, b) => a.localeCompare(b, "es")); // ["Agua", "Café", "Té"]
+novedades.with(0, "Mate");                               // ["Mate", "Café", "Agua"]
+novedades;                                               // sigue siendo ["Té", "Café", "Agua"]
+```
+
+Encajan con React, donde actualizar el estado es crear un array nuevo: `setItems(items.with(i, nuevo))`.
+
+</Profundiza>
+
+### Ordenar textos como una persona
+
+Para textos, el comparador correcto es `localeCompare`, que ordena según las reglas del idioma: no
+separa mayúsculas de minúsculas, coloca "Á" junto a "A" y, en español, la "ñ" después de la "n".
+Esta pregunta pone a prueba la diferencia entre el orden por defecto y el de `localeCompare`, y si
+`toSorted` toca el original:
+
+<Pregunta id="arrays-metodos-sort-localecompare" />
+
+Si ordenas listas grandes, crea un `Intl.Collator` una vez y reutiliza su `compare`: hace lo mismo
+que `localeCompare` sin reconstruir la configuración en cada comparación.
+
+```js
+const collator = new Intl.Collator("es");
+const sorted = users.toSorted((a, b) => collator.compare(a.name, b.name));
+```
+
+Y desde ES2019 la ordenación es **estable**: las cajas que el comparador considera iguales
+conservan su orden original. Eso permite ordenar por varios criterios con una sola pasada o confiar
+en que un empate no reordena la lista:
+
+```js
+// Por fecha (más reciente primero) y, si coincide, por nombre
+const sorted = posts.toSorted(
+  (a, b) => new Date(b.createdAt) - new Date(a.createdAt) || a.title.localeCompare(b.title, "es"),
+);
+```
+
+Restar fechas funciona porque `Date` se convierte a número (milisegundos). El `||` pasa al segundo
+criterio solo cuando el primero da `0`. Si las fechas vienen como strings ISO 8601 con el mismo
+formato y la misma zona horaria (por ejemplo, todas terminadas en `Z`), compararlas como strings
+también ordena bien.
+
+---
+
+## Estaciones que cambian el número de cajas
+
+### flat y flatMap: desempaquetar
+
+A veces cada caja trae dentro otras cajas. `flat(depth)` las desempaqueta sobre la cinta (un
+nivel por defecto; `flat(Infinity)` aplana todo). `flatMap(fn)` es `map` seguido de `flat(1)`, y
+tiene un uso que no es obvio: como tu máquina puede devolver un array de **cualquier** longitud
+(cero, una o varias cajas), sirve para **filtrar y transformar a la vez**.
+
+```js
+const allTags = posts.flatMap((p) => p.tags);                       // aplanar
+const validIds = rows.flatMap((r) => (r.id ? [Number(r.id)] : [])); // filtrar + transformar
+```
+
+### Array.from: fabricar una cinta
+
+`Array.from` crea una cinta a partir de cualquier iterable (o de algo con `length`) y acepta una
+máquina de mapeo como segundo argumento:
+
+```js
+Array.from({ length: 5 }, (_, i) => i + 1);  // [1, 2, 3, 4, 5]: skeletons, paginación
+Array.from(new Set(tags));                   // quitar duplicados
+Array.from(map.values(), (u) => u.name);     // de un Map a un array, mapeando
+Array.from(document.querySelectorAll("a"));  // NodeList → array con todos los métodos
+```
+
+<AntesDeSeguir>
+
+Dos formas de "crear tres elementos numerados". ¿Qué imprime?
+
+```js
+const a = new Array(3).map((_, i) => i);
+const b = Array.from({ length: 3 }, (_, i) => i);
+console.log(a.length, 0 in a, a.join("-"));
+console.log(b.length, 0 in b, b.join("-"));
+```
+
+<Respuesta>
+
+```
+3 false --
+3 true 0-1-2
+```
+
+`new Array(3)` crea una cinta de longitud 3 con **huecos**, no con tres `undefined`: en la
+posición `0` no hay ninguna caja (`0 in a` es `false`). Y `map` se salta los huecos, así que no
+hace nada. `Array.from({ length: 3 }, fn)` no tiene ese problema: llama a la máquina para cada
+posición.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+---
+
+## La estación que no pone nada en la cinta: forEach
+
+`forEach` pasa cada caja por tu máquina y devuelve `undefined`: no hay cinta de salida. Por eso
+`const items = list.forEach(…)` siempre es `undefined`, y en JSX `{list.forEach(…)}` no pinta nada.
+Además:
+
+- **No se puede cortar**: `break` es un error de sintaxis dentro del callback y `return` solo sale
+  de esa vuelta. Si necesitas parar, usa `for…of`, o `some`/`find` si lo que buscas es una
+  respuesta.
+- **No espera promesas**: con un callback `async`, `forEach` lanza todas las llamadas y sigue sin
+  esperar a ninguna.
+
+<AntesDeSeguir>
+
+¿Qué imprimen los dos `console.log`?
+
+```js
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const log = [];
+async function guardarTodo(ids) {
+  ids.forEach(async (id) => {
+    await wait(10);
+    log.push("guardado " + id);
+  });
+  log.push("listo");
+}
+await guardarTodo([1, 2]);
+console.log(log.join(" | "));
+await wait(50);
+console.log(log.join(" | "));
+```
+
+<Respuesta>
+
+```
+listo
+listo | guardado 1 | guardado 2
+```
+
+`forEach` ignora lo que devuelve tu máquina, incluida la promesa de un callback `async`. Así que
+`guardarTodo` termina (y el `await` de fuera se cumple) con los guardados todavía pendientes. Para
+procesar en orden, `for…of` con `await`; en paralelo, `await Promise.all(list.map(async …))`, que
+sí recoge las promesas en una cinta y espera a todas.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Regla: si quieres un valor, usa `map`/`filter`/`reduce`. `forEach` es para efectos secundarios
+(logs, llamadas imperativas), y casi siempre un `for…of` se lee igual de bien.
+
+---
+
+## Cuánto cuesta una cadena larga
+
+Cada estación de la cadena es una pasada completa sobre la cinta y crea una cinta intermedia.
+`filter → map → toSorted` recorre los datos tres veces. ¿Importa? Para las listas que pinta una UI
+(decenas, cientos, unos pocos miles de elementos), no: hablamos de microsegundos, y la claridad
+vale más.
+
+Lo que sí importa es la complejidad: un `find` o un `includes` **dentro** de un `map` multiplica
+los recorridos (n × m), y eso se nota mucho antes. Indexa con un objeto, `Map` o `Set` y vuelve a
+ser lineal.
+
+<Callout type="nota">
+Si una transformación es realmente cara y el componente se re-renderiza a menudo, el siguiente paso es memoizarla (`useMemo`), no reescribirla con bucles. Mide antes de optimizar.
+</Callout>
+
+---
+
+## El ticket, resuelto
+
+**¿Cómo cambia el catálogo lo que ve otro componente?** `products.sort(…)` es el operario que se
+mete en la cinta original. Las props del catálogo y del panel son **el mismo** array, así que
+reordenarlo en un componente lo reordena para todos, sin `setState` de por medio.
+
+**¿Por qué "agua mineral" y "Ñoquis" quedan detrás de "Zumo"?** Comparar con `>` compara por
+código de carácter, igual que el `sort` sin comparador.
+
+<AntesDeSeguir>
+
+Una versión reducida del catálogo y del panel. ¿Qué imprime?
+
+```js
+const products = [
+  { id: 5, name: "Té verde" },
+  { id: 4, name: "agua mineral" },
+  { id: 3, name: "Café" },
+  { id: 2, name: "Ñoquis" },
+  { id: 1, name: "Zumo" },
+];
+function ordenarCatalogo(list) {
+  list.sort((a, b) => (a.name > b.name ? 1 : -1));
+  return list;
+}
+const catalogo = ordenarCatalogo(products);
+console.log(catalogo.map((p) => p.name).join(", "));
+console.log(products.slice(0, 2).map((p) => p.id).join(","));
+```
+
+<Respuesta>
+
+```
+Café, Té verde, Zumo, agua mineral, Ñoquis
+3,5
+```
+
+Las mayúsculas van antes que las minúsculas y la "Ñ" (código 209) detrás de todas. Y el panel,
+que quería los ids `5,4` (los más nuevos), ahora ve `3,5`: el catálogo le reordenó la cinta.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+**¿Qué tiene de malo que el comparador nunca devuelva `0`?** Que no es un comparador válido: con
+dos nombres iguales afirma a la vez que cada uno va antes que el otro, y un comparador
+inconsistente deja el resultado en manos del motor. `localeCompare` devuelve `0` cuando toca.
+
+**¿Cómo se escribe para que diga qué se quiere?** Como una cadena de montaje:
 
 ```jsx
 function ProductList({ products, search }) {
@@ -55,199 +662,37 @@ function ProductList({ products, search }) {
 }
 ```
 
-Cada línea dice **qué** se quiere (filtrar, ordenar, agrupar, pintar), no **cómo** recorrer índices. Y no muta nada. Ya usas `map` y `filter` a diario; esta lección va de lo que no se ve a simple vista: qué devuelve exactamente cada método, cuáles mutan y dónde están las trampas.
+Cada línea es una estación con nombre (filtrar, ordenar, agrupar, pintar) y ninguna toca la cinta
+que llegó por props.
 
-## El mapa: qué devuelve y si muta
+---
 
-| Método | Devuelve | ¿Muta? |
-|---|---|---|
-| `map(fn)` | Array nuevo, **misma longitud** | No |
-| `filter(fn)` | Array nuevo con los que pasan (puede ser `[]`) | No |
-| `find(fn)` / `findLast(fn)` | El primer / último elemento que cumple, o `undefined` | No |
-| `findIndex(fn)` / `findLastIndex(fn)` | Índice, o `-1` | No |
-| `some(fn)` / `every(fn)` | Booleano | No |
-| `includes(x)` | Booleano | No |
-| `reduce(fn, inicial)` | Un valor cualquiera (número, objeto, Map…) | No |
-| `flat(n)` / `flatMap(fn)` | Array nuevo aplanado | No |
-| `forEach(fn)` | `undefined` | No (pero suele usarse para efectos) |
-| `sort(fn)` / `reverse()` | **El mismo array** | **Sí** |
-| `toSorted(fn)` / `toReversed()` | Array nuevo | No |
-| `push`, `pop`, `shift`, `unshift`, `splice` | Longitud o elementos quitados | **Sí** |
+## Práctica: el catálogo crece
 
-La regla práctica en React: el estado y las props se tratan como inmutables, así que dentro de un componente solo usas la columna "No".
-
-## map: siempre la misma longitud
-
-`map` transforma cada elemento y devuelve un array **exactamente igual de largo**. Si quieres menos elementos, no es `map`: es `filter` (o `flatMap`, ahora lo verás). Un `map` que devuelve `null` para "saltarse" elementos deja elementos `null` en el array; en JSX no se pintan, pero en datos sí molestan.
-
-El callback recibe **tres** argumentos: `(item, index, array)`. Normalmente ignoras los dos últimos, pero existen, y eso tiene consecuencias cuando pasas una función ya hecha por referencia:
-
-<Pregunta id="arrays-metodos-map-parseint" />
-
-<Callout type="cuidado">
-`arr.map(fn)` solo equivale a `arr.map((x) => fn(x))` si `fn` ignora sus argumentos extra. `parseInt` (que usa el segundo como base) o tus propias funciones con parámetros opcionales no los ignoran. `map(Number)` sí es seguro: `Number` solo usa el primer argumento.
-</Callout>
-
-En React, `map` es la forma de pintar listas, y cada elemento necesita una `key` estable (el `id` de la API), no el `index`: si la lista se filtra o reordena, el índice cambia de elemento y React reutiliza el estado equivocado.
-
-## filter, find y compañía
-
-`filter` devuelve **siempre** un array, aunque esté vacío. `find` devuelve **un elemento** o `undefined`. Esa diferencia decide cómo escribes el código de después:
-
-```js
-const admins = users.filter((u) => u.role === "admin"); // [] si no hay: admins.map(...) es seguro
-const me = users.find((u) => u.id === currentId);       // undefined si no está: me.name puede romper
-```
-
-`findIndex` devuelve `-1` si no encuentra nada (cuidado con `if (index)`: el índice `0` es falsy y `-1` es truthy). `findLast` y `findLastIndex` (ES2023) buscan desde el final, útil para "el último mensaje sin leer" sin invertir el array.
-
-<Pregunta id="arrays-metodos-find-vs-filter" />
-
-`includes` compara con *SameValueZero*: funciona con primitivos (y encuentra `NaN`, cosa que `indexOf` no hace), pero con objetos compara referencias. `users.includes({ id: 1 })` es `false` aunque haya un usuario con id 1; para eso está `some((u) => u.id === 1)`.
-
-## some y every
-
-`some` responde "¿alguno cumple?" y `every` "¿todos cumplen?". Ambos **cortan** en cuanto conocen la respuesta: `some` en el primer `true`, `every` en el primer `false`.
-
-La trampa está en el array vacío: `every` devuelve `true` (no hay ningún contraejemplo) y `some` devuelve `false`. Es lógica matemática correcta, pero en una UI puede ser un bug: "todas las tareas completadas ✔" cuando no hay tareas.
-
-```js
-const allDone = tasks.length > 0 && tasks.every((t) => t.done);
-```
-
-## reduce: potente, pero no para todo
-
-`reduce` recorre el array llevando un **acumulador**: el callback recibe `(acc, item, index, array)` y lo que devuelva será el `acc` de la siguiente vuelta.
-
-```js
-const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-```
-
-El segundo argumento es el **valor inicial**. Es opcional según la especificación, pero en la práctica pásalo siempre. Sin él, `reduce` usa el primer elemento como acumulador y empieza en el segundo, lo que provoca dos problemas: con un array de objetos, el acumulador inicial es un objeto (y `objeto + número` da basura), y con un array vacío lanza un error.
-
-<Pregunta id="arrays-metodos-array-vacio" />
-
-Donde `reduce` brilla es en convertir un array en **otra estructura**: contar, agrupar o indexar.
-
-```js
-// Contar por estado
-const counts = orders.reduce((acc, o) => {
-  acc[o.status] = (acc[o.status] ?? 0) + 1;
-  return acc;
-}, {});
-
-// Indexar por id: buscar luego es O(1) en vez de un find por cada elemento
-const byId = users.reduce((acc, u) => {
-  acc[u.id] = u;
-  return acc;
-}, {});
-```
-
-El último patrón importa en React: un `posts.map((p) => users.find((u) => u.id === p.authorId))` recorre `users` una vez **por cada post**. Con un índice (`byId[p.authorId]`, o un `Map`) es un acceso directo. Para indexar también puedes usar `Object.fromEntries(users.map((u) => [u.id, u]))` o `new Map(users.map((u) => [u.id, u]))`, que suelen leerse mejor.
-
-<Pregunta id="arrays-metodos-reduce-agrupar" />
-
-<Callout type="clave">
-Usa `reduce` cuando el resultado es **un valor de otra forma** (un número, un objeto, un Map). Si el resultado es un array del mismo tipo, casi siempre hay un método más claro: `map`, `filter`, `flatMap`. Y si un `reduce` necesita tres líneas de comentario para entenderse, un `for…of` con una variable es perfectamente válido: la legibilidad gana.
-</Callout>
-
-## Object.groupBy
-
-Agrupar es tan habitual que desde ES2024 hay un método nativo (Node 21+, navegadores desde 2023–2024):
-
-```js
-const byCategory = Object.groupBy(products, (p) => p.category);
-// { bebidas: [...], despensa: [...] }
-```
-
-Dos detalles: el objeto devuelto tiene **prototipo `null`** (no hereda `toString`, `hasOwnProperty`…; `Object.entries` y `Object.keys` funcionan sin problema), y si las claves no son strings o necesitas mantener el tipo, existe `Map.groupBy`, que devuelve un `Map`. En TypeScript necesitas `"lib": ["ES2024"]` (o posterior) en el `tsconfig` para que lo reconozca. Si tienes que soportar entornos antiguos, el `reduce` de la sección anterior hace lo mismo.
-
-## sort: muta, compara strings y es estable
-
-`sort` tiene tres comportamientos que sorprenden:
-
-1. **Muta** el array y devuelve el **mismo** array (no una copia).
-2. Sin comparador, convierte los elementos a string y los compara por unidades de código UTF-16. Por eso `[10, 1, 5].sort()` da `[1, 10, 5]`.
-3. El comparador debe devolver un **número**: negativo si `a` va antes, positivo si va después y `0` si da igual. Para números es `a - b` (ascendente) o `b - a` (descendente). Devolver un booleano (`a > b`) no sirve: `false` se convierte en `0` ("iguales") y `true` en `1`, nunca negativo, así que el comparador es inconsistente y el resultado depende del motor.
-
-<Pregunta id="arrays-metodos-sort-muta" />
-
-En React, `sort` sobre props o estado es un bug real: mutas datos compartidos y, si lo haces sobre el estado, React puede no detectar el cambio porque la referencia es la misma. La solución moderna es `toSorted` (ES2023, Node 20+), que devuelve una copia; la clásica, `[...list].sort(…)`. Lo mismo con `toReversed` frente a `reverse`.
-
-Para textos, el comparador correcto es `localeCompare`, que ordena según las reglas del idioma: no separa mayúsculas de minúsculas, coloca "Á" junto a "A" y, en español, la "ñ" después de la "n".
-
-<Pregunta id="arrays-metodos-sort-localecompare" />
-
-Si ordenas listas grandes, crea un `Intl.Collator` una vez y reutiliza su `compare`: hace lo mismo que `localeCompare` sin reconstruir la configuración en cada comparación.
-
-```js
-const collator = new Intl.Collator("es");
-const sorted = users.toSorted((a, b) => collator.compare(a.name, b.name));
-```
-
-Y desde ES2019 la ordenación es **estable**: los elementos que el comparador considera iguales conservan su orden original. Eso permite ordenar por varios criterios con una sola pasada o confiar en que un empate no reordena la lista:
-
-```js
-// Por fecha (más reciente primero) y, si coincide, por nombre
-const sorted = posts.toSorted(
-  (a, b) => new Date(b.createdAt) - new Date(a.createdAt) || a.title.localeCompare(b.title, "es"),
-);
-```
-
-Restar fechas funciona porque `Date` se convierte a número (milisegundos). Si las fechas vienen como strings ISO 8601 con el mismo formato y la misma zona horaria (por ejemplo, todas terminadas en `Z`), compararlas como strings también ordena bien.
-
-## flat y flatMap
-
-`flat(depth)` aplana arrays anidados (un nivel por defecto; `flat(Infinity)` aplana todo). `flatMap(fn)` es `map` seguido de `flat(1)`, y tiene un uso que no es obvio: como el callback puede devolver un array de cualquier longitud, sirve para **filtrar y transformar a la vez**.
-
-```js
-const allTags = posts.flatMap((p) => p.tags);                    // aplanar
-const validIds = rows.flatMap((r) => (r.id ? [Number(r.id)] : [])); // filtrar + transformar
-```
-
-## Array.from
-
-`Array.from` crea arrays a partir de cualquier iterable (o de algo con `length`) y acepta una función de mapeo como segundo argumento:
-
-```js
-Array.from({ length: 5 }, (_, i) => i + 1);  // [1, 2, 3, 4, 5]: skeletons, paginación
-Array.from(new Set(tags));                   // quitar duplicados
-Array.from(map.values(), (u) => u.name);     // de un Map a un array, mapeando
-Array.from(document.querySelectorAll("a"));  // NodeList → array con todos los métodos
-```
-
-Ojo con `new Array(5).map(…)`: crea un array de 5 **huecos** (no de 5 `undefined`), y `map` se salta los huecos, así que no hace nada. `Array.from({ length: 5 }, fn)` no tiene ese problema.
-
-## forEach no es un map sin retorno
-
-`forEach` ejecuta el callback por cada elemento y devuelve `undefined`. Por eso `const items = list.forEach(…)` siempre es `undefined`, y en JSX `{list.forEach(…)}` no pinta nada. Además:
-
-- **No se puede cortar**: `break` es un error de sintaxis dentro del callback y `return` solo sale de esa vuelta. Si necesitas parar, usa `for…of`, o `some`/`find` si lo que buscas es una respuesta.
-- **No espera promesas**: con un callback `async`, `forEach` lanza todas las llamadas y sigue sin esperar a ninguna. Para procesar en orden, `for…of` con `await`; en paralelo, `await Promise.all(list.map(async …))`.
-
-Regla: si quieres un valor, usa `map`/`filter`/`reduce`. `forEach` es para efectos secundarios (logs, llamadas imperativas), y casi siempre un `for…of` se lee igual de bien.
-
-## Encadenar y su costo
-
-Cada método de la cadena es una pasada completa sobre el array y crea un array intermedio. `filter → map → toSorted` recorre los datos tres veces. ¿Importa? Para las listas que pinta una UI (decenas, cientos, unos pocos miles de elementos), no: hablamos de microsegundos, y la claridad vale más. Lo que sí importa es la complejidad: un `find` o un `includes` **dentro** de un `map` multiplica los recorridos (n × m), y eso se nota mucho antes. Indexa con un objeto, `Map` o `Set` y vuelve a ser lineal.
-
-<Callout type="nota">
-Si una transformación es realmente cara y el componente se re-renderiza a menudo, el siguiente paso es memoizarla (`useMemo`), no reescribirla con bucles. Mide antes de optimizar.
-</Callout>
-
-## Práctica
+El equipo de producto pide más del catálogo: filtrar por categoría, buscar sin que importen
+mayúsculas ni tildes y ordenar por nombre o por precio, sin repetir el bug del ticket. Este
+ejercicio pone a prueba que encadenes `filter` y `toSorted` sin mutar la entrada, con
+`localeCompare` y un comparador numérico que respete los empates:
 
 <Ejercicio id="arrays-metodos-preparar-lista" />
 
+Y para el panel de administración, un resumen de los pedidos. Este ejercicio pone a prueba
+`reduce` con valor inicial, `flatMap` para juntar los productos de todos los pedidos y los casos
+límite de una lista vacía:
+
 <Ejercicio id="arrays-metodos-resumen-pedidos" />
 
-## Resumen
+---
 
-- `map` devuelve un array de **la misma longitud**; su callback recibe `(item, index, array)`, así que cuidado al pasar funciones por referencia (`map(parseInt)`).
-- `filter` devuelve siempre un array; `find` devuelve un elemento o `undefined`; `findIndex` devuelve `-1`.
-- `every` sobre `[]` es `true` y `some` es `false`.
-- `reduce` es para convertir un array en otra cosa (total, objeto, Map). Pasa **siempre** el valor inicial. Si no se lee bien, usa un `for…of`.
-- `sort` **muta** y, sin comparador, compara como strings. Usa `toSorted` con `a - b` para números y `localeCompare(…, "es")` para textos. Es estable.
-- `Object.groupBy` agrupa en una línea (ES2024); `flatMap` filtra y transforma a la vez; `Array.from({ length }, fn)` genera arrays.
-- `forEach` devuelve `undefined`, no se puede cortar y no espera promesas.
-- Encadenar métodos cuesta varias pasadas, pero lo que de verdad pesa es un `find` dentro de un `map`: indexa con un `Map` u objeto.
+## Lo que ahora puedes explicar
+
+Ante cualquier método de array, ahora sabes hacerte las dos preguntas de la cadena de montaje:
+qué sale por el otro lado y si toca la cinta original. Sabes que `map` nunca cambia el número de
+cajas y le entrega tres cosas a tu máquina, que `filter` siempre da un array y `find` puede dar
+`undefined`, que `every` sobre una cinta vacía dice "sí", que `reduce` necesita su caja inicial,
+que `forEach` no devuelve nada ni espera a nadie, y que `sort` reordena la cinta de todos y compara
+como strings si no le dices otra cosa.
+
+En la siguiente lección verás *destructuring* y *spread*, la sintaxis que ya asomó aquí en
+`([category, items]) =>` y en `[...list].sort()`: cómo sacar piezas de un objeto o un array en una
+línea, y cómo construir copias nuevas en lugar de mutar.

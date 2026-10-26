@@ -5,13 +5,14 @@
  *   pnpm validate:content            grafo, preguntas, snippets y ejercicios
  *   pnpm validate:content --videos   además comprueba que los videos existen (red)
  */
-import { access } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { concepts, modules } from "../src/content/curriculum";
 import { diagnosticQuestions, diagnosticSections } from "../src/content/diagnostic";
 import { lessons, publishedModules } from "../src/content/lessons";
 import { lessonIdsWithContent } from "./lib/mdx-registry";
 import type { Question } from "../src/content/types";
+import { checkLessonMdx } from "./lib/check-mdx";
 import { checkGraph, checkQuestion, checkSections, type Problem } from "./lib/checks";
 import { runExerciseVariants } from "./lib/run-exercise";
 import { normalizeOutput, runSnippet } from "./lib/run-snippet";
@@ -74,10 +75,21 @@ for (const lesson of lessons) {
   }
   if (lesson.id !== `${mod.slug}/${lesson.slug}`) problems.push(`${where}: el id debe ser ${mod.slug}/${lesson.slug}`);
   for (const c of lesson.concepts) if (!conceptIds.has(c)) problems.push(`${where}: concepto inexistente ${c}`);
+  let source: string | undefined;
   try {
-    await access(path.join(import.meta.dirname, "..", "src", "content", "lessons", mod.slug, lesson.slug, "leccion.mdx"));
+    source = await readFile(
+      path.join(import.meta.dirname, "..", "src", "content", "lessons", mod.slug, lesson.slug, "leccion.mdx"),
+      "utf8",
+    );
   } catch {
     problems.push(`${where}: falta leccion.mdx`);
+  }
+  if (source !== undefined) {
+    const mdxProblems = await checkLessonMdx(source, {
+      questionIds: lesson.questions.map((q) => q.id),
+      exerciseIds: lesson.exercises.map((e) => e.id),
+    });
+    for (const p of mdxProblems) problems.push(`${where}: ${p}`);
   }
   if (!lessonIdsWithContent.has(lesson.id)) problems.push(`${where}: falta su entrada en src/content/lessons/mdx.tsx`);
   for (const v of lesson.videos) {

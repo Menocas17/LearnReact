@@ -8,9 +8,9 @@ export const modulosYErrores: LessonDef = {
   slug: "modulos-y-errores",
   title: "Módulos y errores",
   summary:
-    "Por qué una variable de módulo en Next.js puede filtrar datos entre usuarios y por qué tu error boundary no ve el error de un onClick: cómo se evalúan los módulos ES y cómo viajan los errores.",
+    "Dos tickets: un Next.js que filtra nombres entre usuarios y un error boundary que no ve el error de Guardar. De la era de los script tags a los módulos ES (evaluación única, live bindings, import()) y de throw a Error.cause: cómo viaja un error y dónde se puede capturar.",
   concepts: ["js.modulos", "js.errores"],
-  minutes: 40,
+  minutes: 50,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
@@ -23,6 +23,14 @@ export const modulosYErrores: LessonDef = {
     },
   ],
   sources: [
+    {
+      title: "Wirfs-Brock y Eich: JavaScript: The First 20 Years (HOPL 2020)",
+      url: "https://doi.org/10.1145/3386327",
+    },
+    {
+      title: "Node.js: Determinar el sistema de módulos",
+      url: "https://nodejs.org/docs/latest-v22.x/api/packages.html#determining-module-system",
+    },
     { title: "MDN: Módulos JavaScript", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Guide/Modules" },
     { title: "MDN: import", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Statements/import" },
     { title: "MDN: export", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Statements/export" },

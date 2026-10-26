@@ -1,0 +1,509 @@
+## Dos avisos sobre la misma pantalla
+
+Es jueves y tienes dos avisos que apuntan al mismo componente. Uno viene de la monitorización de errores:
+
+> **3 eventos nuevos en `Perfil`:** `SyntaxError: Unexpected token '<'`. Coinciden con la caída del backend de anoche.
+
+El otro, de QA:
+
+> **#531 — "El perfil muestra a la persona equivocada".** Hago clic en Ana y enseguida en Luis: la URL dice Luis, la pantalla muestra a Ana. Además, el perfil de un usuario borrado sale vacío en vez de mostrar el error.
+
+Abres el componente. Parece impecable:
+
+```jsx
+function Perfil({ id }) {
+  const [perfil, setPerfil] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/usuarios/" + id)
+      .then((res) => res.json())
+      .then(setPerfil)
+      .catch((err) => {
+        reportarError(err); // lo envía a la monitorización
+        setError("No pudimos cargar el perfil");
+      });
+  }, [id]);
+
+  if (error) return <p>{error}</p>;
+  return <h1>{perfil?.name}</h1>;
+}
+```
+
+Con el 500, la pantalla de error **sí** apareció, pero a la monitorización llegó un `SyntaxError` que no menciona el 500. Con el usuario borrado, un 404 con `{"error":"no existe"}`, **no** apareció. Y la respuesta de Ana, que salió antes, llegó después y pisó a la de Luis.
+
+Tres preguntas sobre el contrato de `fetch`, no sobre este componente:
+
+1. ¿Por qué con un 500 el `catch` se ejecuta pero el error habla de un `<`, y con un 404 ni siquiera se ejecuta?
+2. ¿Cómo se le dice a una petición que ya está en camino "ya no me interesa"?
+3. Cuando la cancelas, ¿qué le pasa de verdad? ¿El servidor se entera?
+
+Casi todo lo que sorprende de `fetch` es una decisión de diseño. Para verlo, mira qué había antes.
+
+---
+
+## Antes de fetch: XMLHttpRequest
+
+Durante años, la forma de pedir datos desde JavaScript sin recargar la página fue `XMLHttpRequest` (XHR). La idea nació en Microsoft, en el equipo de la versión web de Outlook, y llegó con Internet Explorer 5 como un componente ActiveX; los demás navegadores la copiaron con el nombre `XMLHttpRequest` y acabó estandarizada. A pesar del nombre, nunca fue solo para XML: hoy casi siempre transporta JSON.
+
+```js
+const xhr = new XMLHttpRequest();
+xhr.open("GET", "/api/usuarios/ana");
+xhr.onload = () => {
+  // se ejecuta con un 200… y también con un 404 o un 500
+  console.log(xhr.status, xhr.responseText);
+};
+xhr.onerror = () => {
+  // solo cuando no hubo respuesta: sin red, DNS, CORS
+  console.log("fallo de red");
+};
+xhr.send();
+```
+
+Fíjate en los comentarios: ahí está el origen de la primera pregunta. Ya en XHR el evento `load` se dispara con **cualquier** respuesta HTTP, y `error` queda para cuando no hubo respuesta. Para el navegador, "el servidor contestó que no existe" es una conversación que salió bien. Decidir si ese "no existe" es un error de tu aplicación siempre fue cosa tuya.
+
+Los problemas de XHR eran otros: un único objeto mutable con petición, estado (`readyState`) y respuesta, y callbacks que se anidaban al encadenar peticiones. Por eso se popularizaron envoltorios como `$.ajax` de jQuery o axios, que en el navegador usa XHR por debajo (en Node usa el módulo `http`, y hoy también puede usar `fetch`).
+
+`fetch`, definido en el estándar Fetch del WHATWG, llegó a los navegadores en la misma época en que las promesas entraban en el lenguaje con ES2015. Cambió tres cosas:
+
+- **Devuelve una promesa**, así que `await`, `Promise.all` y todo lo de las lecciones anteriores sale gratis.
+- **Separa las piezas** en `Request`, `Response` y `Headers`, clases que usan también los Service Workers, la Cache API, Node (que trae `fetch` global desde la versión 18) y los Route Handlers de Next.
+- **El cuerpo es un *stream*** (datos que llegan por partes): la promesa se cumple con el status y las cabeceras, y el cuerpo puede seguir descargándose, sin cargar respuestas enormes enteras en memoria.
+
+Lo que **no** cambió fue la regla de XHR: un 404 es una respuesta, no un fallo.
+
+---
+
+## El repartidor
+
+Para el resto de la lección, mira de cerca al **repartidor** de la cocina de "El event loop": `fetch` es mandarlo al proveedor con una nota. Tú te quedas con un **localizador**, el de "Promesas": no es el resultado, solo se enciende cuando el repartidor vuelve. Y el trabajo del repartidor es **traerte una respuesta**, no juzgarla.
+
+Si vuelve con un sobre, la promesa **se cumple**, diga el sobre "aquí tienes a Ana" (200), "no existe" (404) o "se nos quemó el almacén" (500). La promesa **se rechaza** solo cuando no pudo traer ninguna respuesta:
+
+- un **error de red**: sin conexión, el DNS no resuelve, el servidor no acepta la conexión (un `TypeError`; en Chrome, `Failed to fetch`);
+- una petición **inválida** antes de salir, como una URL mal formada (también `TypeError`);
+- un **bloqueo por CORS**: el navegador no te deja ver la respuesta y lo trata como un error de red;
+- la petición **se cancela** con una señal, que es la última parte de la lección.
+
+CORS es un guardia en la puerta de tu edificio: el repartidor puede haber vuelto con la respuesta, pero si el proveedor no autorizó a tu origen a leerla, el guardia la confisca y a ti te dice lo mismo que si se hubiera perdido.
+
+<Profundiza titulo="por qué CORS se disfraza de error de red">
+
+Es deliberado: el estándar Fetch convierte un fallo de CORS en el mismo error de red que cualquier otro, para no filtrar nada de una respuesta que tu página no tiene permiso de ver. Si tu código pudiera distinguir "el servidor no existe" de "existe pero no me deja leer", una página cualquiera obtendría pistas sobre servicios a los que no tiene acceso, como los de la red interna de quien la visita. El motivo real solo aparece en la consola de las herramientas de desarrollo, que tu código no puede leer.
+
+Y un detalle que conecta con el final de la lección: en las peticiones "simples" (un `GET`, ciertos `POST`) el navegador **sí** envía la petición y solo bloquea la lectura de la respuesta, así que el servidor pudo procesarla. En las demás, primero envía una comprobación (`OPTIONS`, el *preflight*).
+
+</Profundiza>
+
+Los ejemplos fabrican la respuesta con `new Response(...)`, el mismo objeto que entrega `fetch`, para no depender de la red.
+
+<AntesDeSeguir>
+
+El usuario borrado: un 404 con un JSON válido. ¿Qué imprime?
+
+```js
+const fakeFetch = async () =>
+  new Response('{"error":"no existe"}', { status: 404 });
+
+try {
+  const res = await fakeFetch("/api/perfil");
+  const perfil = await res.json();
+  console.log("perfil:", perfil.name);
+} catch (e) {
+  console.log("catch:", e.name);
+}
+```
+
+<Respuesta>
+
+```
+perfil: undefined
+```
+
+El repartidor volvió con un sobre: la promesa se cumple, `res.json()` parsea un JSON válido y `perfil.name` es `undefined`. Nadie lanza nada y React pinta el perfil vacío del ticket.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Ahora el 500. Esta pregunta pone a prueba si distingues el momento en que se cumple `fetch` del momento en que falla la lectura del cuerpo.
+
+<Pregunta id="fetch-500-syntaxerror" />
+
+Lo traicionero es que el `catch` sí se ejecutó, pero **por el motivo equivocado**. Muchos servidores, proxies y CDNs devuelven HTML en sus páginas de error, y a tu monitorización llega un `SyntaxError` que no dice nada del 500. Dos síntomas, una causa: nadie leyó lo que decía el sobre.
+
+La respuesta trae a la vista si salió bien según HTTP: `res.ok` es `true` solo cuando `res.status` está entre 200 y 299. El patrón es comprobarlo **antes** de interpretar el cuerpo y lanzar un error propio con la información útil:
+
+```js
+class HttpError extends Error {
+  constructor(status, body) {
+    super("HTTP " + status);
+    this.name = "HttpError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+const res = await fetch("/api/perfil");
+if (!res.ok) throw new HttpError(res.status, await res.text());
+const perfil = await res.json();
+```
+
+Con `status` en el error puedes decidir: un 401 redirige al login, un 404 muestra "no existe", un 409 explica el conflicto, un 503 ofrece reintentar.
+
+<Callout type="clave">
+
+`fetch` resuelto significa "el repartidor volvió con una respuesta", no "salió bien". Comprueba `res.ok` (o `res.status`) en un solo sitio y convierte las respuestas no exitosas en errores.
+
+</Callout>
+
+---
+
+## La nota y el sobre
+
+Amplía la imagen. Lo que le das al repartidor es una **nota** (la petición), escrita con el segundo argumento de `fetch`:
+
+```js
+const res = await fetch("/api/tareas", {
+  method: "POST",                                  // GET por defecto
+  headers: { "Content-Type": "application/json" }, // objeto, array o Headers
+  body: JSON.stringify({ titulo: "Estudiar fetch" }),
+  signal: controller.signal,                       // para cancelar (más abajo)
+});
+```
+
+El repartidor solo sabe empaquetar ciertos tipos: un string, `FormData`, `Blob`, `URLSearchParams` y algunos más. Un objeto de JavaScript no es uno de ellos.
+
+<AntesDeSeguir>
+
+Olvidas el `JSON.stringify`. ¿Qué cuerpo y qué `Content-Type` llevaría la petición? (`Request` construye la misma petición que enviaría `fetch`.)
+
+```js
+const req = new Request("https://api.ejemplo.com/tareas", {
+  method: "POST",
+  body: { titulo: "Estudiar fetch" },
+});
+console.log(await req.text());
+console.log(req.headers.get("content-type"));
+```
+
+<Respuesta>
+
+```
+[object Object]
+text/plain;charset=UTF-8
+```
+
+Sin error: el objeto se convierte con `String()` y viaja `"[object Object]"`, etiquetado como texto plano porque el cuerpo es un string. El servidor recibe basura, y si contesta con un 400, la promesa tampoco rechaza.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+De ahí dos reglas. El JSON va con `JSON.stringify` y, si tu API lo espera, con la cabecera `Content-Type: application/json` que pones tú. Con `FormData` o `URLSearchParams`, en cambio, **no** la pongas: el navegador elige la correcta, y en multipart incluye el *boundary*, el separador entre campos que se genera en cada petición.
+
+El sobre también tiene dos partes, y llegan en momentos distintos:
+
+```js
+const res = await fetch("/api/perfil"); // llegan status y cabeceras
+res.status;      // 404
+res.statusText;  // "Not Found" (en HTTP/2 suele venir vacío: el protocolo no lo transmite)
+res.ok;          // true solo si status está entre 200 y 299
+res.headers.get("content-type"); // "application/json; charset=utf-8"
+
+const data = await res.json();          // el cuerpo: OTRA promesa
+```
+
+### Las páginas se leen una vez
+
+El repartidor vuelve con la carátula (status y cabeceras) y **el contenido te lo pasa página a página** según le llega. Tú lees cada página y la sueltas; nadie guarda copia, porque eso obligaría a tener la respuesta entera en memoria, justo lo que el stream evita.
+
+Por eso `json()`, `text()` y `blob()` son asíncronos, y por eso **el cuerpo solo se puede consumir una vez**. Muerde cuando quieres "loguear el texto y luego parsear". La siguiente pregunta pone a prueba qué pasa con una segunda lectura:
+
+<Pregunta id="fetch-body-una-vez" />
+
+La salida es leer `text()` una vez y aplicar `JSON.parse` después. Si de verdad necesitas dos lecturas, `res.clone()` es pedir fotocopia de cada página, y tiene que ser **antes** de la primera lectura: después, `clone()` lanza un `TypeError`.
+
+Y leer el texto primero tiene otra ventaja, porque `res.json()` rechaza siempre que el cuerpo no sea JSON válido, incluso en casos normales.
+
+<AntesDeSeguir>
+
+Un `DELETE` o un logout suelen responder `204 No Content`. ¿Qué imprime?
+
+```js
+const res = new Response(null, { status: 204 });
+console.log(res.ok, res.status);
+try {
+  await res.json();
+  console.log("json ok");
+} catch (e) {
+  console.log(e.name);
+}
+```
+
+<Respuesta>
+
+```
+true 204
+SyntaxError
+```
+
+Éxito según HTTP, pero el cuerpo está vacío, y parsear un texto vacío falla igual que `JSON.parse("")`. Una operación que salió bien acaba en tu `catch`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Cuerpos vacíos y errores en HTML o texto plano: por eso un wrapper serio lee el cuerpo con cuidado.
+
+```js
+async function readBody(res) {
+  const text = await res.text();
+  if (text === "") return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+```
+
+---
+
+## Todo en un solo sitio: apiFetch
+
+En una app real no repites esto en cada componente. Lo concentras en una función (o en el cliente que te genere tu herramienta) y el resto del código trabaja con datos o con un `HttpError`:
+
+```js
+export async function apiFetch(path, { method = "GET", data, signal } = {}) {
+  const res = await fetch("/api" + path, {
+    method,
+    signal,
+    headers: data !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: data !== undefined ? JSON.stringify(data) : undefined,
+  });
+  const body = await readBody(res);
+  if (!res.ok) throw new HttpError(res.status, body);
+  return body;
+}
+```
+
+Es lo que tiene que hacer cualquier `queryFn` de TanStack Query que use `fetch` (la librería solo trata como error lo que tu función lanza), y lo que ya traen hecho `ky` o `axios`: los dos rechazan por defecto con un status fuera de 2xx; `fetch`, no. `fetch` es una primitiva que sigue el criterio de HTTP; el criterio de tu aplicación lo pones encima.
+
+### Cookies y credenciales
+
+En el navegador, `fetch` envía las cookies a tu **mismo origen** por defecto (`credentials: "same-origin"`). Si tu API está en otro dominio y usa cookies de sesión, necesitas `credentials: "include"` en el cliente **y** que el servidor responda con `Access-Control-Allow-Credentials: true` y un origen explícito (no `*`). Si una petición "funciona en Postman pero no en el navegador", casi siempre es CORS o credenciales: Postman no tiene guardia en la puerta.
+
+### fetch en Next.js
+
+En el App Router también usas `fetch` en el servidor: en un Server Component (`await fetch(...)` dentro de un componente `async`) o en un Route Handler, que recibe un `Request` y devuelve un `Response`: las mismas clases. Todo lo de `res.ok` aplica igual. Cambian tres cosas:
+
+- En el servidor no hay "origen actual": las URLs tienen que ser absolutas.
+- No hay navegador que adjunte las cookies del usuario. Si llamas a una API que las necesita, las reenvías tú.
+- Llamar desde un Server Component a un Route Handler de tu propia app es un salto HTTP innecesario (y, si la página se prerrenderiza en el build, falla: no hay servidor escuchando). Llama directamente a la función que lee los datos.
+
+Cómo cachea Next esas peticiones es tema del módulo de Next.js.
+
+---
+
+## ¿Por qué no se puede cancelar una promesa?
+
+Segunda pregunta del caso. Clic en Ana, clic en Luis: salen dos repartidores. Vuelve antes el de Luis; luego el de Ana, y su `.then(setPerfil)` la pinta encima. Lo primero que se te ocurre es cancelar la promesa. No se puede, y no es un olvido.
+
+El localizador **solo sirve para enterarse**, y se puede repartir: la misma promesa puede estar en un `Promise.all`, en una caché y en dos componentes. Si cualquiera pudiera cancelar el encargo, le rompería el resultado a los demás. Es la separación que viste en "Promesas": quien la crea tiene `resolve` y `reject`; quien la recibe solo observa.
+
+En TC39, el comité que diseña JavaScript, hubo una propuesta de promesas cancelables y se retiró. `fetch` salió sin forma de cancelar, y cuando llegó la solución no se metió ni en las promesas ni en `fetch`: se definió en el estándar DOM como un mecanismo **genérico**.
+
+### El walkie-talkie: AbortController y AbortSignal
+
+La solución respeta la misma separación de poderes. Antes de mandar al repartidor le das un **receptor** de walkie-talkie y te quedas con el **emisor**:
+
+- `AbortController` es el **emisor**: lo tiene quien decide cancelar y expone `abort(reason?)`.
+- `AbortSignal` (`controller.signal`) es el **receptor**: se lo pasas a quien hace el trabajo. Solo escucha: tiene `aborted`, `reason` y emite el evento `"abort"`.
+
+```js
+const controller = new AbortController();
+fetch("/api/usuarios/ana", { signal: controller.signal })
+  .then((res) => res.json())
+  .catch((err) => console.log(err.name)); // "AbortError"
+
+controller.abort();
+```
+
+Al abortar, la promesa de `fetch` rechaza con el `reason` de la señal: si no pasaste uno, una `DOMException` con `name` `"AbortError"`; si pasaste uno (`controller.abort(new Error("cambió de perfil"))`), ese mismo error. Si la respuesta ya había llegado y estabas leyendo el cuerpo, es `res.json()` la que rechaza: las páginas dejan de llegar. Quien cancela no necesita saber nada de la petición, y quien la hace solo mira la señal.
+
+<AntesDeSeguir>
+
+Pulsas el emisor **antes** de mandar al repartidor. ¿Qué imprime, y en qué orden?
+
+```js
+const controller = new AbortController();
+controller.abort();
+
+fetch("https://api.ejemplo.com/usuarios/ana", { signal: controller.signal })
+  .then(() => console.log("respuesta"))
+  .catch((err) => console.log("rechazada:", err.name));
+
+console.log("fetch llamado");
+```
+
+<Respuesta>
+
+```
+fetch llamado
+rechazada: AbortError
+```
+
+`fetch` mira la señal antes de enviar nada y, como ya está abortada, la petición **ni siquiera sale**. Aun así `"fetch llamado"` va primero: el `catch` es una microtarea y, como viste en "El event loop", nunca corre en medio del script.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+La siguiente pregunta pone a prueba qué pasa al abortar dos veces la misma señal.
+
+<Pregunta id="abort-segunda-vez" />
+
+Un receptor que recibió la orden de volver se queda en rojo **para siempre**. Si reutilizas un controller ya abortado para la siguiente petición, esa petición rechaza **antes de salir**, como acabas de ver. Un controller por operación.
+
+### Timeouts y señales combinadas
+
+`fetch` no tiene timeout propio: si el servidor no responde, puede esperar muchísimo. `AbortSignal.timeout(ms)` es un receptor que se activa solo, con un `reason` de tipo `"TimeoutError"`. Y para "cancela si el usuario lo pide **o** si tarda demasiado", `AbortSignal.any([...])` crea un receptor que escucha a varios emisores:
+
+```js
+const res = await fetch(url, {
+  signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
+});
+```
+
+Esta pregunta pone a prueba qué `reason` conserva la señal combinada cuando se disparan las dos:
+
+<Pregunta id="abort-timeout-any" />
+
+El nombre distinto te permite tratar cada caso: un `TimeoutError` merece un "el servidor tarda demasiado, reintenta"; un `AbortError` no merece nada.
+
+### Tus propias funciones cancelables
+
+Como es genérico, el walkie-talkie lo entienden muchas APIs: `addEventListener` acepta una opción `signal` que quita el listener al abortar, y en Node lo aceptan, entre otras, los timers de `node:timers/promises` y `fs.readFile`. Cualquier función asíncrona tuya también puede. El contrato de las APIs de la plataforma es:
+
+1. Si la señal ya está abortada al empezar, rechaza enseguida con `signal.reason`.
+2. Si se aborta durante el trabajo, deja de trabajar (limpia timers, listeners…) y rechaza con `signal.reason`.
+
+```js
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const id = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => {
+      clearTimeout(id);
+      reject(signal.reason);
+    }, { once: true });
+  });
+}
+```
+
+<AntesDeSeguir>
+
+¿Qué imprime, en qué orden, y cuánto tarda el programa en terminar?
+
+```js
+const controller = new AbortController();
+wait(5000, controller.signal).then(
+  () => console.log("listo"),
+  (err) => console.log("rechazada:", err.name),
+);
+controller.abort();
+console.log("abort llamado");
+```
+
+<Respuesta>
+
+```
+abort llamado
+rechazada: AbortError
+```
+
+Y termina al instante. `abort()` dispara `"abort"` de forma **síncrona**: el listener limpia el timer y rechaza ahí mismo, pero el `then` es una microtarea y espera al final del script. Sin el `clearTimeout`, el timer seguiría vivo 5 segundos: rechazar no es dejar de trabajar.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Si tu función llama a otras que también aceptan señal (otro `fetch`, otra función tuya), basta con pasarles la misma: la cancelación se propaga sola.
+
+---
+
+## El walkie-talkie en useEffect
+
+La versión correcta del perfil es la estructura de efecto con limpieza que ya conoces, pero ahora la limpieza pulsa el emisor:
+
+```jsx
+useEffect(() => {
+  const controller = new AbortController();
+
+  apiFetch("/usuarios/" + id, { signal: controller.signal })
+    .then(setUser)
+    .catch((err) => {
+      if (err.name === "AbortError") return; // cancelado: no es un error
+      setError(err);
+    });
+
+  return () => controller.abort();
+}, [id]);
+```
+
+Cuando `id` cambia (o el componente se desmonta), React ejecuta la limpieza del efecto anterior **antes** del efecto nuevo: la petición de Ana se aborta y su `.then(setUser)` nunca se ejecuta. Cada efecto crea su propio controller, así que la regla de uno por operación se cumple sola. En desarrollo, el Strict Mode monta, desmonta y vuelve a montar: verás en la pestaña Network una petición cancelada, la prueba de que la limpieza funciona.
+
+Esta pregunta pone a prueba qué pasa si quitas la línea del `AbortError`:
+
+<Pregunta id="abort-efecto-catch" />
+
+<Callout type="cuidado">
+
+Una cancelación no es un fallo. Si no filtras `err.name === "AbortError"` en el `catch`, cada navegación rápida mostrará un mensaje de error falso. Si usas `AbortSignal.timeout`, decide a propósito qué hacer con `"TimeoutError"`.
+
+</Callout>
+
+react.dev también muestra una alternativa sin `AbortController`: una variable `ignore` que la limpieza pone en `true` y que se comprueba antes de `setState`. Evita la carrera, pero la petición sigue viva y consume red: tiras el localizador mientras el repartidor sigue caminando. Abortar hace las dos cosas. Y para datos de servidor en una app real, react.dev recomienda no escribir esto a mano: un framework (Server Components en Next) o una librería de caché como TanStack Query, que le pasa un `signal` a tu `queryFn` y lo aborta por ti.
+
+---
+
+## Lo que abortar no hace
+
+Tercera pregunta. Cuando pulsas el emisor, el repartidor da media vuelta, pero si ya entregó la nota, **el proveedor ya la tiene**. Abortar es una decisión **del cliente**: deja de esperar, corta la transferencia si sigue en curso y rechaza la promesa. HTTP no tiene un "deshacer": si la petición ya llegó al servidor, este puede terminarla igualmente. Esta pregunta pone a prueba si separas lo que pasa en tu lado de lo que pasa en el servidor:
+
+<Pregunta id="abort-no-deshace" />
+
+Para lecturas (`GET`) da igual: tiras la respuesta y listo. Para escrituras (`POST`, `DELETE`) significa que, tras abortar, **no sabes** si se aplicó. Por eso un botón "Cancelar" de un pago no puede ser solo `controller.abort()`, y por eso los reintentos de escrituras necesitan que el servidor sea idempotente (que repetir la operación no la aplique dos veces), por ejemplo con una clave de idempotencia.
+
+---
+
+## El caso, resuelto
+
+**¿Por qué con un 500 el error dice `<` y con un 404 no hay error?** La promesa de `fetch` se cumple con **cualquier** respuesta HTTP, como el `load` de XHR. El 500 traía HTML y `res.json()` falló al parsearlo; el 404 traía JSON válido y se pintó un perfil sin `name`. El arreglo es `apiFetch`: comprueba `res.ok`, lee el cuerpo una vez y lanza un `HttpError` con el status.
+
+**¿Cómo se le dice a una petición "ya no me interesa"?** No cancelando la promesa, que es un localizador que cualquiera puede tener, sino con un `AbortController` por petición, su `signal` en `fetch` y `controller.abort()` en la limpieza del efecto. La petición de Ana rechaza con `AbortError`, su `then` nunca pinta y el `catch` la ignora.
+
+**¿Qué le pasa a la petición cancelada?** En tu lado, todo: la promesa rechaza y la transferencia se corta si seguía en curso. En el servidor, posiblemente nada. Para leer un perfil da igual; para un pago, no.
+
+---
+
+## Práctica
+
+El primer ejercicio convierte `apiFetch` en un cliente completo: pone a prueba la URL, el JSON con su cabecera, la señal, la lectura segura del cuerpo y el `HttpError`.
+
+<Ejercicio id="fetch-api-client" />
+
+El segundo lleva el walkie-talkie a un buscador: una espera cancelable que cumpla el contrato de la plataforma y una búsqueda que aborte la anterior para que solo cuente la última.
+
+<Ejercicio id="abort-ultima-busqueda" />
+
+---
+
+## Lo que ahora puedes explicar
+
+Si alguien pregunta por qué `fetch` "no lanza con un 404", ya no contestas "porque sí": es la regla que ya tenía XHR, para HTTP un 404 es una conversación que salió bien, y por eso cada aplicación necesita un sitio como `apiFetch` donde decide qué es un error. Sabes que el cuerpo es un stream que se lee una vez y que un `SyntaxError` en la monitorización puede ser un 500 disfrazado.
+
+También sabes por qué una promesa no se cancela (es un localizador que cualquiera puede tener) y cómo se cancela de verdad: un emisor para quien decide, un receptor para quien trabaja, uno por operación. Y sabes dónde acaba su poder: en tu lado de la conexión.
+
+Pero el ticket #531 escondía algo más general que `fetch`: operaciones asíncronas que se solapan y terminan en un orden que no controlas. Eso es una **race condition**, y aparece igual en un buscador que muestra resultados viejos o en un botón que guarda dos veces. En la siguiente lección las verás con líneas de tiempo, junto con **debounce** y **throttle**, para controlar cuántas peticiones salen en primer lugar.

@@ -8,9 +8,9 @@ export const destructuringYSpread: LessonDef = {
   slug: "destructuring-y-spread",
   title: "Destructuring y spread",
   summary:
-    "Por qué el className que le pasas a un Button desaparece: destructuring con valores por defecto, rest para separar props y spread, donde el orden decide quién gana.",
+    "Un Button que pierde el className del padre y un Avatar de 0 px: los objetos como cajas que el destructuring abre por rótulo o posición, el spread vuelca (y el último gana) y el rest recoge. Cierra el módulo 2.",
   concepts: ["js.destructuring", "js.spread-rest"],
-  minutes: 35,
+  minutes: 45,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
@@ -34,6 +34,7 @@ export const destructuringYSpread: LessonDef = {
     { title: "MDN: Sintaxis de propagación (spread)", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Operators/Spread_syntax" },
     { title: "MDN: Parámetros rest", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Functions/rest_parameters" },
     { title: "MDN: Parámetros predeterminados", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Functions/Default_parameters" },
+    { title: "TC39: propuesta Object Rest/Spread Properties (ES2018)", url: "https://github.com/tc39/proposal-object-rest-spread" },
     { title: "react.dev: Pasar props a un componente", url: "https://es.react.dev/learn/passing-props-to-a-component" },
     { title: "react.dev: useState", url: "https://es.react.dev/reference/react/useState" },
   ],

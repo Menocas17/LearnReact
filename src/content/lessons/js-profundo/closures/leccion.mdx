@@ -1,6 +1,9 @@
-## El bug
+## Un contador que se rinde en el 1
 
-Probablemente has escrito algo así alguna vez:
+> **#214 — "La sala de espera dice que llevas 1 segundo... para siempre".** El contador sube a 1
+> y ahí se queda.
+
+Abres el componente, escrito como tantas veces:
 
 ```jsx
 function Timer() {
@@ -17,121 +20,294 @@ function Timer() {
 }
 ```
 
-Esperas que cuente 1, 2, 3… pero se queda en **1** para siempre. No es un bug de React: es JavaScript haciendo exactamente lo que dice la especificación. Para entenderlo necesitas una pieza: los **closures**.
+Un compañero propone cambiar `const` por `let` "para que `count` se pueda actualizar". No sirve.
+Tres preguntas antes de tocar nada:
 
-## Scope léxico: dónde se busca una variable
+1. ¿Por qué el callback del intervalo ve siempre `0`, si la pantalla ya muestra `1`?
+2. ¿Cómo puede seguir existiendo ese `count`, si la función `Timer` que lo creó terminó hace rato?
+3. ¿Por qué `setCount((c) => c + 1)` lo arregla, si el callback sigue siendo el mismo?
 
-Cuando JavaScript encuentra un identificador, lo busca en el scope donde **se escribió** el código (no donde se ejecuta), y si no lo encuentra sube al scope padre, y así hasta el global.
+No es un bug de React: es JavaScript haciendo exactamente lo que dice la especificación. La pieza
+que falta se llama **closure**.
+
+---
+
+## Funciones que viajan
+
+JavaScript trata las funciones como valores: las guardas en variables, las pasas a otras
+funciones y las devuelves. Brendan Eich, su creador, fue contratado por Netscape con la promesa de
+llevar al navegador algo parecido a Scheme, un dialecto de Lisp. La dirección de Netscape exigió
+que el lenguaje se pareciera a Java, pero el propio Eich cuenta que las funciones como valores
+(*first-class functions*) son una de las piezas que tomó de Scheme.
+
+Eso abre una pregunta que cualquier lenguaje así tiene que resolver: si una función viaja a otro
+sitio y se ejecuta más tarde, ¿dónde busca sus variables? Dicho de otro modo, ¿cuál es su
+**scope**, la región del código donde una variable es visible? Los primeros Lisp las buscaban
+**donde se ejecutaba** la función (*scope dinámico*): el resultado dependía de quién la llamara.
+Scheme, en los años 70, eligió buscarlas **donde se escribió** (*scope léxico*), y JavaScript
+sigue esa misma regla.
+
+## Habitaciones con puerta
+
+Esta imagen te acompaña toda la lección. Cada vez que **se llama** a una función,
+JavaScript construye una **habitación** con sus parámetros y variables. Cada habitación tiene una
+**puerta** que da a la habitación donde esa función **se escribió**, y así hasta la habitación más
+externa: la del módulo y, por fuera de ella, la global.
+Para encontrar un identificador, JavaScript mira en la habitación actual y, si no está, sale por
+la puerta.
+
+<AntesDeSeguir>
+
+`leer` se llama desde dentro de `llamar`, que tiene su propio `nivel`. ¿Qué imprime?
 
 ```js
-const saludo = "Hola";
+const nivel = "módulo";
 
-function exterior() {
-  const nombre = "Ana";
-  function interior() {
-    console.log(saludo, nombre); // busca en interior → exterior → global
-  }
-  interior();
+function leer() {
+  return nivel;
 }
+
+function llamar() {
+  const nivel = "llamador";
+  return leer();
+}
+
+console.log(llamar());
 ```
 
-Que la búsqueda dependa de dónde está escrito el código, y no de quién lo llama, es lo que significa **léxico**.
+<Respuesta>
 
-## Qué es un closure
+```
+módulo
+```
 
-Un closure es una función **junto con el entorno de variables donde fue creada**. Toda función en JavaScript lo es, pero se nota cuando una función se crea dentro de otra: se lleva consigo una referencia a las variables de la función exterior, y puede seguir usándolas aunque la exterior ya haya terminado.
+`leer` se escribió en el nivel del módulo, así que su puerta da al módulo, no a `llamar`. Quién
+la llame no cambia dónde está la puerta. Eso es lo que significa **léxico**: la búsqueda depende
+de dónde está escrito el código. Con scope dinámico, habría impreso `llamador`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+## La llave: qué es un closure
+
+Segunda capa: una función creada dentro de una habitación **se lleva la llave** de esa habitación.
+Un closure es eso: una función **junto con el entorno de variables donde fue creada**. Toda
+función en JavaScript lo es, pero se nota cuando una se crea dentro de otra y sobrevive a ella:
 
 ```js
 function createCounter() {
-  let count = 0;            // vive en el entorno de esta llamada
+  let count = 0; // vive en la habitación de esta llamada
   return () => {
-    count++;                // la función devuelta lo sigue viendo
+    count++; // la función devuelta tiene la llave
     return count;
   };
 }
-
-const next = createCounter();
-next(); // 1
-next(); // 2
 ```
 
-`createCounter` terminó, pero `count` no se destruye: la función devuelta mantiene vivo ese entorno. Y cada llamada a `createCounter()` crea un entorno **nuevo**:
+`createCounter` termina, pero la habitación no se derriba: sigue en pie mientras alguien tenga
+la llave. Este es el porqué de segundo nivel: si las variables capturadas vivieran en la pila de llamadas,
+desaparecerían con el `return` y devolver funciones sería imposible. Las variables capturadas
+viven tanto como la función que las usa, y el recolector de basura solo las libera cuando nadie
+puede alcanzarlas.
+
+<AntesDeSeguir>
+
+Con `createCounter` de arriba, ¿qué imprime esto?
+
+```js
+const a = createCounter();
+const b = createCounter();
+a();
+a();
+console.log(a(), b());
+```
+
+<Respuesta>
+
+```
+3 1
+```
+
+Cada llamada a `createCounter()` construye una habitación **nueva** con su propio `count`. `a` y
+`b` tienen llaves de habitaciones distintas.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Esta pregunta pone a prueba lo mismo con una fábrica de funciones: dos llamadas, dos entornos.
 
 <Pregunta id="closures-cuenta-independiente" />
 
-## Captura variables, no valores
+<Profundiza titulo="habitaciones en la especificación">
 
-Un closure no guarda una foto del valor: guarda una referencia a la **variable**. Si la variable cambia, el closure ve el valor nuevo.
+ECMAScript llama *Environment Record* a la habitación, y cada una tiene una referencia a su
+entorno exterior (la puerta). Al crear una función, el motor guarda en su slot interno
+`[[Environment]]` el entorno donde nació (la llave); al llamarla, crea un entorno nuevo cuyo
+exterior es ese `[[Environment]]`. El término *closure* lo introdujo Peter Landin en 1964, para
+describir una función junto con el entorno que da valor a sus variables libres (las que usa pero
+no declara).
+
+</Profundiza>
+
+## Una llave, no una foto
+
+Tercera capa: la llave abre la habitación; no es una foto de lo que había dentro. Un closure
+guarda una referencia a la **variable**, no a su valor: si la variable cambia, el closure ve el
+valor nuevo. Esta pregunta comprueba si lo crees de verdad:
 
 <Pregunta id="closures-variable-no-valor" />
 
-Por eso `for (let i = 0; …)` funciona con callbacks y `var` no: `let` crea una variable nueva **en cada iteración**, mientras que `var` (o una variable declarada fuera del bucle) es una sola variable compartida.
+<AntesDeSeguir>
+
+¿Y con bucles `for`, uno con `var` y otro con `let`?
+
+```js
+const conVar = [];
+for (var i = 0; i < 3; i++) conVar.push(() => i);
+
+const conLet = [];
+for (let j = 0; j < 3; j++) conLet.push(() => j);
+
+console.log(conVar.map((f) => f()).join(","));
+console.log(conLet.map((f) => f()).join(","));
+```
+
+<Respuesta>
+
+```
+3,3,3
+0,1,2
+```
+
+Como viste en **JavaScript: fundamentos**, `var` ignora las llaves del bucle: es **una sola**
+variable, igual que si la declararas fuera, y las tres llaves abren la misma habitación. `let`
+crea una variable nueva **en cada iteración**, como una habitación pequeña por vuelta. En la
+siguiente lección verás qué habitaciones crea cada bloque.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 <Callout type="clave">
 Un closure lee el valor **actual** de la variable que capturó. La pregunta importante siempre es: ¿qué variable capturó?
 </Callout>
 
-## Cada render es una llamada a función
+---
 
-Ahora la conexión con React. Un componente es una función, y **cada render es una llamada nueva**. En cada llamada, `useState` devuelve el valor de ese render y lo asignas a una `const` nueva:
+## Cada render, una habitación nueva
 
-```jsx
-// Render 1: React llama a Timer() y useState devuelve 0
-const [count, setCount] = useState(0); // count = 0 (constante de ESTE render)
+Un componente de React es una función, y **cada render es una llamada nueva**: una habitación
+nueva. En cada una, `useState` devuelve el valor de ese render y lo guardas en una `const`
+**distinta**. Las funciones que creas durante el render (handlers, efectos, timeouts) se llevan la
+llave de **esa** habitación.
 
-// Render 2: React vuelve a llamar a Timer() y useState devuelve 1
-const [count, setCount] = useState(0); // count = 1 (otra constante distinta)
+Compruébalo sin React, con un `useState` de juguete:
+
+<AntesDeSeguir>
+
+¿Qué valor queda guardado tras tres ticks?
+
+```js
+let guardado = 0; // lo que React guarda entre renders
+const setCount = (v) => {
+  guardado = typeof v === "function" ? v(guardado) : v;
+};
+
+function Timer() {
+  const count = guardado; // useState: el valor de ESTE render
+  return () => setCount(count + 1); // callback del intervalo
+}
+
+const tick = Timer(); // render 1: el efecto crea el intervalo
+tick();
+Timer(); // render 2
+tick();
+Timer(); // render 3
+tick();
+console.log(guardado);
 ```
 
-Las funciones que creas durante un render (handlers, callbacks de efectos, timeouts) cierran sobre las variables **de ese render**. Esa constante nunca cambia: el siguiente render tiene la suya.
+<Respuesta>
+
+```
+1
+```
+
+Los renders 2 y 3 construyen habitaciones nuevas con `count` en `1`, pero `tick` tiene la llave
+de la habitación del render 1, donde `count` es `0` y nadie lo cambia. Por eso `let` no ayuda:
+nadie reasigna esa variable; React no la modifica, **vuelve a llamar** a la función y crea otra.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Esta pregunta pone a prueba la misma idea con un handler que programa un timeout mientras el
+usuario sigue cambiando el estado:
 
 <Pregunta id="closures-render-snapshot" />
 
-## El bug, explicado
+## El ticket, resuelto
 
-Volvamos al temporizador:
+**¿Por qué ve siempre `0`?** En el render 1, el efecto (con `[]`, "solo al montar") crea el
+intervalo, cuyo callback se lleva la llave del render 1. Cada segundo ejecuta `setCount(0 + 1)`.
+React renderiza con `count = 1`, pero el efecto no se vuelve a ejecutar: el intervalo sigue con
+el callback viejo. `setCount(1)`, `setCount(1)`… el valor ya es 1 y nada cambia. A esto se le
+llama **closure obsoleta** (*stale closure*): una función que sigue viendo variables de un render
+antiguo.
 
-1. **Render 1**: `count` es `0`. El efecto se ejecuta (las dependencias `[]` dicen "solo al montar") y crea el intervalo. Su callback cierra sobre el `count` del render 1, que vale `0`.
-2. Cada segundo, el callback ejecuta `setCount(0 + 1)`.
-3. React renderiza con `count = 1`, pero el efecto **no se vuelve a ejecutar**, así que el intervalo sigue usando el callback viejo, que ve `count = 0`.
-4. Para siempre: `setCount(1)`, `setCount(1)`… El valor ya es 1, así que no cambia nada.
+**¿Cómo sigue existiendo `count`?** Porque la habitación del render 1 sigue en pie mientras el
+intervalo tenga la llave.
 
-A esto se le llama **closure obsoleta** (*stale closure*): una función que sigue viendo variables de un render antiguo.
+**¿Por qué lo arregla el updater?** Esta pregunta te pide elegir el cambio que funciona:
 
 <Pregunta id="closures-fix-interval" />
 
-La solución idiomática es la **función de actualización**:
+Con `setCount((c) => c + 1)` el callback ya no lee `count`: React le pasa el valor más reciente.
+El closure sigue siendo "viejo", pero ya no importa porque no depende de nada que cambie. La otra
+salida es declarar `count` en las dependencias, y el intervalo se recrea en cada cambio.
 
-```jsx
-setCount((c) => c + 1);
-```
+## Llaves por todas partes
 
-El callback ya no lee `count`: React le pasa el valor más reciente. El closure sigue siendo "viejo", pero ya no importa porque no depende de nada que cambie.
+Los closures están detrás de mucho de lo que usas:
 
-## Dónde más usas closures
-
-Los closures están detrás de muchas cosas que usas a diario:
-
-- **Estado privado**: como en `createCounter`, nadie puede tocar `count` desde fuera.
+- **Estado privado**: como en `createCounter`, nadie toca `count` desde fuera.
 - **Funciones fábrica**: `makeGreeter("Hola")` devuelve funciones configuradas.
 - **Debounce, throttle y memoización**: guardan un timer o una caché entre llamadas.
-- **Handlers de eventos en React**: cada `onClick={() => borrar(item.id)}` cierra sobre `item`.
-- **Stores externos** (Zustand, por ejemplo): guardan estado y suscriptores en closures, como el `createStore` del patrón observer. Los callbacks que devuelven los custom hooks, en cambio, cierran sobre el estado de su render.
+- **Handlers en React**: cada `onClick={() => borrar(item.id)}` cierra sobre `item`.
+- **Stores externos** (Zustand, por ejemplo): guardan el estado y la lista de suscriptores en
+  variables que solo ven sus funciones. Es lo que construirás en el proyecto de este módulo. Los
+  callbacks que devuelven los custom hooks, en cambio, cierran sobre el estado de su render.
 
 <Callout type="cuidado">
 Un closure mantiene vivo todo lo que referencia. Si guardas un closure en un sitio de larga duración (un listener global, una caché) que captura objetos grandes, esos objetos no se liberan. Por eso los efectos limpian sus listeners.
 </Callout>
 
-## Práctica
+---
+
+## Práctica: después del ticket
+
+Con el contador arreglado llega otro encargo: la librería de analítica se inicializa desde
+varios componentes y debe arrancar una sola vez. Te hace falta un `once` que recuerde, en su
+propia habitación, si ya se ejecutó y qué devolvió:
 
 <Ejercicio id="closures-once" />
 
+Y la sala de espera quiere un contador con botón de deshacer, con el estado escondido donde nadie
+pueda tocarlo. Este ejercicio pone a prueba el estado privado y el historial en un closure:
+
 <Ejercicio id="closures-contador" />
 
-## Resumen
+---
 
-- El scope es **léxico**: una función ve las variables del lugar donde se escribió.
-- Un **closure** es una función más el entorno donde se creó; ese entorno sobrevive mientras la función exista.
-- Captura **variables**, no valores. Cada llamada a la función exterior crea variables nuevas.
-- En React cada render es una llamada nueva: los handlers y efectos ven las variables **de su render**.
-- Si un callback de larga duración necesita el estado actual, usa la función de actualización (o declara la dependencia).
+## Lo que ahora puedes explicar
+
+Ya sabes por qué el intervalo se atasca: tiene la llave de una habitación donde `count` nunca
+cambia. Sabes que esa habitación sobrevive mientras alguien la
+referencie, que cada llamada construye una nueva y que un closure lee variables, no fotos.
+
+Has usado habitaciones y puertas sin preguntarte qué las construye. En la siguiente lección,
+**Scope y hoisting**, entrarás en ellas: qué crea una habitación (funciones, bloques, módulos),
+cómo se guardan dentro las variables y desde cuándo existe cada una: por qué a veces una `const`
+está ahí pero todavía no se puede tocar.

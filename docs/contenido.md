@@ -39,11 +39,49 @@ ejercicio nuevo.
 
 ## Estilo de las lecciones
 
-- Empezar por un bug o problema real (idealmente uno de React) y bajar al concepto de JS.
-- Explicaciones breves, ejemplo, "predice el resultado", errores comunes, ejercicio, resumen.
-- Español neutro, tuteo. Términos técnicos en inglés cuando son los que usa la industria.
-- Componentes MDX disponibles: `<Pregunta id="…" />`, `<Ejercicio id="…" />`,
-  `<Callout type="clave|cuidado|nota">`.
+Las lecciones son **narrativas**: se leen como una clase que construye una idea, no como una
+referencia. Modelo de referencia: `src/content/lessons/asincronia/event-loop/leccion.mdx`.
+
+**Estructura**
+
+1. **Un caso que engancha.** Una situación concreta (un ticket, un bug en producción, una
+   revisión de código), idealmente de React o Next. Termina con 2–4 **preguntas explícitas** que
+   la lección va a responder. El caso no se abandona: se retoma al final.
+2. **Trasfondo.** Por qué el lenguaje o la herramienta es así: qué problema resolvía, qué
+   alternativa se descartó, de dónde viene. Una regla con historia se recuerda; una regla suelta
+   no. Solo hechos comprobables: nada de citas inventadas ni fechas dudosas (si no estás seguro
+   de una fecha, no la pongas).
+3. **Un modelo mental que se construye por capas.** Una analogía o imagen central que se presenta
+   una vez y se amplía con cada concepto nuevo (no una analogía distinta por sección). Después de
+   cada capa, código que la pone a prueba.
+4. **Pausas para predecir.** Antes de revelar un comportamiento no obvio, `<AntesDeSeguir>` con el
+   código y la pregunta, y la explicación dentro de `<Respuesta>`. Varias por lección, además de
+   las `<Pregunta>` evaluadas. Su salida también tiene que ser correcta: ejecútala con Node.
+5. **Profundidad real.** Los porqués de segundo nivel ("¿por qué funciona a medias?", "¿por qué
+   aquí sí y allí no?"), los casos límite y la conexión con React/Next. Lo opcional (detalles de la
+   especificación, historia larga, diferencias entre motores) va en `<Profundiza titulo="…">`.
+6. **El caso, resuelto.** Volver al caso inicial y responder cada pregunta con lo aprendido.
+7. **Práctica** con los ejercicios, presentados como continuación de la historia.
+8. **Cierre** en prosa ("lo que ahora puedes explicar") que conecta con la siguiente lección,
+   en lugar de un resumen en viñetas.
+
+**Tono**
+
+- Segunda persona, tuteo, español neutro. Cercano pero preciso: el tono narrativo nunca justifica
+  una afirmación imprecisa.
+- Párrafos cortos. Tablas solo para comparar; las trazas paso a paso se narran.
+- Términos técnicos en inglés cuando son los que usa la industria, explicados la primera vez.
+- Las `<Pregunta>` y los `<Ejercicio>` se introducen con una frase que diga qué ponen a prueba.
+
+**Componentes MDX**
+
+- `<Pregunta id="…" />` y `<Ejercicio id="…" />`: cada pregunta y ejercicio de la lección aparece
+  exactamente una vez (el validador lo comprueba).
+- `<AntesDeSeguir>` … `<Respuesta>` … `</Respuesta>` `</AntesDeSeguir>`: pausa para predecir.
+- `<Profundiza titulo="…">`: contexto opcional, plegado.
+- `<Callout type="clave|cuidado|nota">`: la idea que hay que llevarse, o una advertencia.
+- Citas con `>` para reglas memorables o el texto de un ticket; `---` para separar actos.
+- Dentro de un componente, deja líneas en blanco alrededor del Markdown que contiene.
 
 ## Flujo para un módulo nuevo
 

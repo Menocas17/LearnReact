@@ -8,9 +8,9 @@ export const thisLesson: LessonDef = {
   slug: "this",
   title: "this",
   summary:
-    "Por qué onClick={this.handleClick} rompía las clases de React: this se decide al llamar la función, no al definirla.",
+    "Un editor de clases que pierde this al hacer clic: por qué JavaScript decide this en cada llamada, cómo lo fijan bind y las arrow functions, y por qué React acabó en los hooks.",
   concepts: ["js.this", "js.call-apply-bind", "js.modo-estricto"],
-  minutes: 40,
+  minutes: 50,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
@@ -37,6 +37,8 @@ export const thisLesson: LessonDef = {
     { title: "MDN: Funciones flecha", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Functions/Arrow_functions" },
     { title: "MDN: Modo estricto", url: "https://developer.mozilla.org/es/docs/Web/JavaScript/Reference/Strict_mode" },
     { title: "MDN: EventTarget.addEventListener() (el valor de this)", url: "https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#the_value_of_this_within_the_handler" },
+    { title: "React (docs heredadas): React sin ES6 (autobinding de createReactClass)", url: "https://legacy.reactjs.org/docs/react-without-es6.html" },
+    { title: "React (docs heredadas): Introducing Hooks (motivación)", url: "https://legacy.reactjs.org/docs/hooks-intro.html#classes-confuse-both-people-and-machines" },
     { title: "react.dev: Component (API de clases heredada)", url: "https://es.react.dev/reference/react/Component" },
   ],
   reviewed: { date: "2026-10-12", versions: { node: "22", react: "19.3" } },

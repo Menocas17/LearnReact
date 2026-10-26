@@ -1,6 +1,11 @@
-## Dos bugs
+## Dos tickets el mismo día
 
-El primero llega como un ticket de soporte: "Entré a mi perfil y en *Vistos recientemente* aparece el nombre de otra persona". El código parece inofensivo:
+El primero llega de soporte:
+
+> **#128 — "Veo nombres de otras personas".** Entré a mi perfil y en *Vistos recientemente*
+> aparece el nombre de alguien que no conozco.
+
+El código parece inofensivo:
 
 ```js
 // lib/vistos.js
@@ -15,17 +20,67 @@ export function recientes() {
 }
 ```
 
-Un Server Component llama a `registrarVisita(usuario.nombre)` y pinta `recientes()`. En desarrollo, con un solo usuario, todo funciona. En producción, cada visitante ve los nombres de todos los demás.
+Un Server Component llama a `registrarVisita(usuario.nombre)` y pinta `recientes()`. En
+desarrollo, contigo como único usuario, todo funciona. En producción, no.
 
-El segundo: envolviste la app en un error boundary para que nunca se vea una pantalla rota. Pero cuando falla el botón "Guardar", el boundary no muestra nada: el error sale en consola y la interfaz sigue como si nada.
+El segundo es tuyo:
 
-Ninguno de los dos es un bug de Next.js ni de React. El primero se explica con **cómo se evalúan los módulos**; el segundo, con **cómo viaja un error** por el código. Vamos por partes.
+> **#129 — "Guardar falla en silencio".** La app está envuelta en un error boundary para que
+> nunca se vea una pantalla rota. Pero cuando falla "Guardar", el boundary no muestra nada: el
+> error sale en la consola y la interfaz sigue como si nada.
 
-## Módulos ES: import y export
+Un compañero lo "arregla" envolviendo la llamada en un `try/catch`. Sigue igual: la consola muestra
+`Uncaught (in promise) Error: sin conexión` y el `catch` nunca se ejecuta.
 
-Un **módulo** es un archivo con su propio scope. Lo que declaras en el nivel superior de un módulo no es global: solo existe dentro de ese archivo, salvo que lo exportes.
+Ninguno es un bug de Next.js ni de React. Al terminar la lección vas a poder responder:
 
-Hay dos tipos de export:
+1. ¿Por qué Luis ve el nombre de Ana, si cada petición llama a las funciones desde cero?
+2. ¿Por qué un error boundary que envuelve **toda** la app no se entera del error de un botón?
+3. ¿Por qué el `try/catch` del compañero tampoco lo atrapa?
+
+La primera va de **cómo se cargan los módulos**; las otras dos, de **cómo viaja un error**.
+Empecemos por una época en la que JavaScript no tenía módulos.
+
+---
+
+## Cuando todo vivía en el mismo cuarto
+
+Durante años, la única forma de repartir código entre archivos en el navegador fue poner varias
+etiquetas `script` en el HTML. Todas compartían **un único scope global**: si dos archivos
+declaraban una función `init`, la segunda pisaba a la primera. Y el orden de las etiquetas era
+la única forma de expresar dependencias: si `app.js` usaba algo de `utils.js`, había que
+acordarse de cargar `utils.js` antes.
+
+La primera salida fue el **patrón módulo**: envolver cada archivo en una función que se llama a
+sí misma (una IIFE) y devolver solo lo público, con lo privado escondido en un closure. Pero
+seguía colgando un nombre del global, y el orden de carga seguía siendo cosa tuya.
+
+Después llegaron sistemas de verdad, cada uno para su entorno:
+
+- **CommonJS**, el que adoptó Node: `require("./x")` lee el archivo del disco y devuelve su
+  `module.exports`, de forma **síncrona**. En un servidor, leer del disco es rápido.
+- **AMD** (con RequireJS como implementación más conocida), para el navegador, donde no se puede
+  bloquear la página esperando una descarga: las dependencias se cargaban de forma **asíncrona**.
+- Los **bundlers** (Browserify, webpack y otros) tomaron otro camino: leer el código con
+  `require` antes de publicarlo y unirlo todo en un solo archivo para el navegador.
+
+ES2015 añadió al lenguaje su propia sintaxis: `import` y `export`, los
+**módulos ES** (ESM). Su decisión clave es que son **estáticos**: los `import` van en el nivel
+superior del archivo (no dentro de un `if` ni de una función) y la ruta es un string literal.
+Así, cualquier herramienta conoce el grafo completo de dependencias **sin ejecutar nada**: de eso
+viven el tree shaking y el code splitting.
+
+---
+
+## El edificio de oficinas
+
+Para el resto de la lección, piensa en tu programa como un **edificio de oficinas**.
+
+**Cada módulo es una oficina con paredes.** Lo que declaras en el nivel superior de un archivo no
+es global: vive dentro de esa oficina. Lo que exportas se atiende en la **ventanilla**; lo que no,
+nadie más lo ve.
+
+Hay dos formas de poner algo en la ventanilla:
 
 ```js
 // math.js
@@ -48,10 +103,14 @@ math.default(5, 3);                                   // el default se llama "de
 ```
 
 - Los **named exports** se importan con llaves y con su nombre exacto (o renombrados con `as`).
-- El **default export** se importa sin llaves y con el nombre que quieras. Por eso muchos equipos prefieren named exports: el nombre es el mismo en todo el proyecto y el editor los autocompleta mejor.
-- `import * as math` crea un **objeto namespace** de solo lectura con todos los exports.
+- El **default export** se importa sin llaves y con el nombre que quieras. Por eso muchos equipos
+  prefieren named exports: el nombre es el mismo en todo el proyecto y el editor los autocompleta
+  mejor.
+- `import * as math` crea un **objeto namespace** de solo lectura con todos los exports: asignarle
+  una propiedad lanza `TypeError`.
 
-Los **re-exports** permiten crear un archivo "índice" que reúne lo de otros:
+Y una oficina puede atender en nombre de otras. Los **re-exports** crean un archivo "índice" que
+reúne lo de varias:
 
 ```js
 // components/index.js
@@ -60,24 +119,62 @@ export { default as Modal } from "./Modal.js";
 export * from "./forms.js";
 ```
 
-Los `import` estáticos tienen que ir en el nivel superior del archivo (no dentro de un `if` ni de una función) y la ruta debe ser un string literal. Así el bundler conoce todo el grafo de dependencias sin ejecutar nada.
+### Cada oficina se monta una vez
 
-## Un módulo se evalúa una sola vez
+La segunda capa es la que explica el ticket #128. El edificio tiene un **directorio**: la primera
+vez que alguien pide una oficina, se monta (se ejecuta el código del módulo, de arriba abajo). Si
+otro archivo la pide después, el directorio le da la dirección de **la misma oficina**, sin
+volver a montarla.
 
-Esta es la regla que explica el primer bug: **la primera vez que algo importa un módulo, su código se ejecuta; todos los imports siguientes reciben la misma instancia**, sin volver a ejecutarlo.
+<AntesDeSeguir>
+
+Tres archivos importan `vistos.js` y dos de ellos le añaden algo. ¿Qué imprime `main.js`?
 
 ```js
-// db.js
-console.log("conectando…");          // se imprime una sola vez
-export const db = crearCliente();
+// vistos.js
+console.log("evaluando vistos.js");
+export const vistos = [];
 
-// usuarios.js y pedidos.js hacen: import { db } from "./db.js";
-// Los dos reciben exactamente el mismo objeto db.
+// perfil.js
+import { vistos } from "./vistos.js";
+vistos.push("perfil");
+console.log("evaluando perfil.js");
+
+// inicio.js: igual que perfil.js, pero con "inicio"
+
+// main.js
+import "./perfil.js";
+import "./inicio.js";
+import { vistos } from "./vistos.js";
+console.log(vistos.join(", "));
 ```
 
-Eso es lo que convierte a un módulo en un **singleton** natural, y es justo lo que quieres para un cliente de base de datos o un logger: una sola instancia compartida por toda la app. (Un store de Zustand creado a nivel de módulo también es un singleton: perfecto en el navegador, pero en el servidor tendría el problema que verás ahora.)
+<Respuesta>
 
-Ahora piensa en un servidor de Next.js. El proceso de Node arranca, evalúa `lib/vistos.js` una vez, y después atiende miles de peticiones de usuarios distintos **con el mismo módulo en memoria**. El array `vistos` no es "de esta petición": es del proceso.
+```
+evaluando vistos.js
+evaluando perfil.js
+evaluando inicio.js
+perfil, inicio
+```
+
+`vistos.js` se evalúa una sola vez, la primera vez que alguien lo necesita (antes que el cuerpo
+de `perfil.js`, porque las dependencias se evalúan primero). `inicio.js` y `main.js` reciben el
+mismo array, con lo que ya le pusieron los demás.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Eso convierte a un módulo en un **singleton** natural, y es justo lo que quieres para un cliente
+de base de datos o un logger: una sola instancia compartida por toda la app. Un store de Zustand
+creado a nivel de módulo también es un singleton: perfecto en el navegador, pero en el servidor
+tendría el problema que viene ahora.
+
+Piensa en un servidor de Next.js. El proceso de Node arranca, monta `lib/vistos.js` una vez y
+después atiende miles de peticiones de usuarios distintos **en el mismo edificio**. El array
+`vistos` no es "de esta petición": es del proceso. Esta pregunta pone a prueba exactamente el
+ticket:
 
 <Pregunta id="modulos-estado-servidor" />
 
@@ -85,22 +182,83 @@ Ahora piensa en un servidor de Next.js. El proceso de Node arranca, evalúa `lib
 En el servidor, todo lo que guardes en variables de módulo es compartido por **todas las peticiones de todos los usuarios** mientras viva el proceso. Úsalo solo para cosas que de verdad son globales (un cliente de base de datos, configuración, una caché de datos públicos). Los datos de un usuario van en variables locales de la función que atiende la petición, en cookies o en la base de datos. En el navegador el problema no existe porque cada pestaña tiene sus propios módulos.
 </Callout>
 
-## Live bindings: lo importado está "conectado"
+### La ventanilla es un cristal, no una fotocopiadora
 
-Un import no copia el valor: crea un **live binding**, una vista de solo lectura de la variable original. Si el módulo que la exporta la cambia, quien la importa ve el valor nuevo.
+Tercera capa. En **Scope y hoisting** viste que un `import` es un casillero con ventanilla que da
+al casillero del otro archivo. Ahora míralo desde el edificio: por la ventanilla ves **lo que hay
+ahora mismo** sobre la mesa de la otra oficina, no una copia de lo que había cuando te asomaste.
+Eso es un **live binding**: una vista de solo lectura de la variable original. Esta pregunta pone
+a prueba sus dos mitades:
 
 <Pregunta id="modulos-live-binding" />
 
-Las dos mitades de la regla:
-
 1. Lo importado refleja **el valor actual** de la variable exportada.
-2. **No puedes reasignarlo** desde fuera (`TypeError`). Si quieres que otros módulos cambien un valor, exporta una función que lo haga.
+2. **No puedes reasignarlo** desde fuera (`TypeError`): el cristal no deja meter la mano. Si
+   quieres que otros módulos cambien un valor, exporta una función que lo haga.
 
-Ojo: "no reasignar" no es "no mutar". Si importas un objeto o un array, puedes cambiar sus propiedades, y lo verán todos los módulos que lo importan, porque es el mismo objeto.
+Ojo: "no reasignar" no es "no mutar". Si por la ventanilla te pasan un objeto o un array, puedes
+cambiar sus propiedades, y lo verán todos los módulos que lo importan, porque es el mismo objeto.
+Es lo que hacía `vistos.push` hace un momento, y lo que estudiaste en **Valores y referencias**.
 
-## import() dinámico y code splitting
+El cristal también explica las **dependencias circulares**: si `a.js` importa `b.js` y `b.js`
+importa `a.js`, uno de los dos empieza a evaluarse antes de que el otro termine, y por la
+ventanilla puede ver un export todavía sin inicializar: un `ReferenceError` por la TDZ, o
+`undefined` en código compilado. Lo viste a fondo en **Scope y hoisting**; la solución casi siempre
+es sacar lo compartido a un tercer módulo del que dependan los dos.
 
-Además del `import` estático existe `import()`, una **expresión** que puedes usar en cualquier sitio (dentro de un `if`, de un handler, con una ruta calculada) y que devuelve una **promesa** con el objeto del módulo:
+El sistema anterior, CommonJS, no tiene cristal: `require` devuelve el objeto `module.exports`
+tal como está, y lo que saques de él es tuyo.
+
+<AntesDeSeguir>
+
+El mismo contador, en CommonJS. ¿Qué imprime `main.cjs`?
+
+```js
+// contador.cjs
+let total = 0;
+function sumar() {
+  total++;
+}
+module.exports = { total, sumar };
+
+// main.cjs
+const { total, sumar } = require("./contador.cjs");
+sumar();
+sumar();
+console.log(total);
+```
+
+<Respuesta>
+
+```
+0
+```
+
+`module.exports = { total, sumar }` creó un objeto con el valor que tenía `total` en ese momento
+(0), y el destructuring te dio una copia de ese valor. `sumar` cambia la variable interna de la
+otra oficina, pero tú tienes una fotocopia. Con ESM, el mismo código imprime 2.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+ESM es el estándar y el que usa el código moderno, aunque todavía verás `require` en
+configuraciones y paquetes antiguos.
+
+<Profundiza titulo="cómo sabe Node qué sistema usar">
+
+`.mjs` siempre es ESM y `.cjs` siempre es CommonJS. Un `.js` sigue el campo `"type"` del
+`package.json` más cercano (`"module"` o `"commonjs"`); si no hay campo `"type"`, Node 22 lo trata
+como CommonJS salvo que detecte sintaxis de ESM (`import`, `export`) en el archivo. En un proyecto de Next.js no lo notas: el bundler procesa tu
+código antes de ejecutarlo.
+
+</Profundiza>
+
+### El anexo que se construye bajo demanda
+
+Última capa del edificio. Además del `import` estático existe `import()`, una **expresión** que
+puedes usar en cualquier sitio (dentro de un `if`, de un handler, con una ruta calculada) y que
+devuelve una **promesa** con el objeto del módulo:
 
 ```js
 async function exportarPDF(datos) {
@@ -109,19 +267,87 @@ async function exportarPDF(datos) {
 }
 ```
 
-Cuando el bundler ve un `import()`, separa ese módulo (y lo que solo él usa) en un archivo aparte, un **chunk**, que se descarga bajo demanda. Eso es **code splitting**, y es lo que hace `React.lazy`:
+Cuando el bundler ve un `import()`, separa ese módulo (y lo que solo él usa) en un archivo aparte,
+un **chunk**, que se descarga bajo demanda: un anexo que solo se construye si alguien lo visita.
+Eso es **code splitting**.
+
+<AntesDeSeguir>
+
+¿Pedir dos veces el anexo lo construye dos veces? ¿Qué imprime?
+
+```js
+// grafica.js
+console.log("evaluando grafica.js");
+export default function Grafica() {}
+
+// main.js (módulo, con await en el nivel superior)
+const a = await import("./grafica.js");
+const b = await import("./grafica.js");
+console.log(a === b);
+console.log(typeof a.default);
+```
+
+<Respuesta>
+
+```
+evaluando grafica.js
+true
+function
+```
+
+`import()` pasa por el mismo directorio: la segunda llamada devuelve el mismo objeto de módulo ya
+evaluado. Y el default export llega como la propiedad `default` de ese objeto.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+`React.lazy` se apoya en exactamente eso. Esta pregunta comprueba por qué necesita una función
+que llama a `import()`:
 
 <Pregunta id="modulos-import-dinamico" />
 
-## Dependencias circulares y CommonJS
+---
 
-Si `a.js` importa `b.js` y `b.js` importa `a.js`, tienes una **dependencia circular**. Funciona a veces, pero uno de los dos módulos empieza a evaluarse antes de que el otro termine, así que puede leer un export que todavía no está inicializado (un `ReferenceError`, o `undefined` en código compilado). Si te pasa, la solución casi siempre es sacar lo compartido a un tercer módulo del que dependan los dos.
+## Cuando algo sale mal en el edificio
 
-Y en una frase: **CommonJS** (`require` y `module.exports`) es el sistema de módulos histórico de Node: carga los archivos de forma síncrona y no tiene live bindings (si desestructuras lo que devuelve `require`, te quedas con una copia del valor de ese momento); ESM (`import`/`export`) es el estándar del lenguaje y el que usa el código moderno, aunque todavía verás `require` en configuraciones y paquetes antiguos.
+Ahora el ticket #129. Las dos primeras ediciones del estándar no tenían forma de capturar un
+error: `throw`, `try`, `catch` y `finally` llegaron con la tercera (ES3).
 
-## Lanzar errores: throw
+Y `throw` acepta **cualquier expresión**: la especificación no exige que sea un error.
+`throw "falló"` o `throw 404` son válidos.
 
-`throw` interrumpe la ejecución y sube por la pila de llamadas hasta que algo lo captura. Técnicamente puedes lanzar **cualquier valor**: `throw "falló"` o `throw 404` son válidos. No lo hagas: lanza siempre un `Error` (o una subclase), porque trae `message`, `name` y sobre todo `stack`, que te dice dónde ocurrió.
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+try {
+  throw "falló";
+} catch (e) {
+  console.log(typeof e);
+  console.log(e.stack);
+}
+```
+
+<Respuesta>
+
+```
+string
+undefined
+```
+
+Lo que llega al `catch` es exactamente lo que se lanzó: un string, sin ningún dato de dónde
+ocurrió. Por eso TypeScript, con `strict` (que activa `useUnknownInCatchVariables`), tipa la variable del
+`catch` como `unknown`: puede ser cualquier cosa.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Así que lanza siempre un `Error` (o una subclase): trae `message`, `name` y sobre todo `stack`,
+que te dice por dónde pasó. (`stack` no está en el estándar, pero todos los motores lo
+implementan.)
 
 ```js
 throw new Error("Usuario no encontrado");
@@ -136,7 +362,14 @@ El motor lanza sus propios errores con tipos nativos que conviene reconocer:
 | `RangeError` | Valor fuera del rango permitido | `new Array(-1)`, recursión infinita (en Chrome y Node) |
 | `SyntaxError` | Código o texto que no se puede analizar | `JSON.parse("{ roto")` |
 
-## try, catch y finally
+### Los partes de incidencia suben por la cadena de encargos
+
+Amplía la imagen. Cuando una función llama a otra, una oficina le hace un **encargo** a otra y
+espera la respuesta. La cadena de encargos pendientes es la pila de llamadas.
+
+Un `throw` es un **parte de incidencia**: interrumpe el trabajo en curso y sube por la cadena,
+oficina por oficina, saltándose lo que cada una tenía pendiente, hasta llegar a un **mostrador de
+guardia** que lo recoja. Ese mostrador es un `try/catch`:
 
 ```js
 try {
@@ -148,15 +381,53 @@ try {
 }
 ```
 
-El orden importa: en cuanto una línea del `try` lanza, el resto del `try` se salta y se pasa al `catch`. `finally` va al final, **incluso si el `catch` vuelve a lanzar**: el error espera a que termine `finally` y después sigue subiendo. Por eso `finally` es el sitio para liberar recursos (cerrar una conexión, quitar un spinner).
+En cuanto una línea del `try` lanza, el resto del `try` se salta y se pasa al `catch`. Si no
+necesitas el error, puedes omitir el parámetro: `catch { … }`.
 
-Si no necesitas el error, puedes omitir el parámetro: `catch { … }`.
+`finally` es **recoger la oficina antes de irse**: pase lo que pase, se ejecuta.
+
+<AntesDeSeguir>
+
+No hay ningún error. ¿Qué imprime?
+
+```js
+function guardarBorrador() {
+  try {
+    console.log("guardando");
+    return "ok";
+  } finally {
+    console.log("quitar spinner");
+  }
+}
+console.log(guardarBorrador());
+```
+
+<Respuesta>
+
+```
+guardando
+quitar spinner
+ok
+```
+
+El `return` no sale directamente: el valor queda apartado, se ejecuta `finally` y solo entonces
+la función entrega `"ok"`. (Por eso no conviene escribir `return` dentro de `finally`: ese
+`return` reemplazaría al del `try`, e incluso a un error que estuviera subiendo.)
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Lo mismo vale cuando lo que sale es un error, **incluso si el `catch` vuelve a lanzar**: el parte
+espera a que termine `finally` y después sigue subiendo. Por eso `finally` es el sitio para
+liberar recursos (cerrar una conexión, quitar un spinner). Esta pregunta pone a prueba ese orden:
 
 <Pregunta id="errores-orden-finally" />
 
-## Errores propios y cause
+### Un formulario propio, y el parte original grapado
 
-Para distinguir tus errores de los del motor, crea una subclase:
+Un `Error` genérico es un parte en blanco. Para distinguir tus errores de los del motor, diseña tu
+propio formulario con una subclase:
 
 ```js
 class NotFoundError extends Error {
@@ -168,11 +439,43 @@ class NotFoundError extends Error {
 }
 ```
 
-- `this.name` hace que el error se identifique bien en consola y en los logs.
 - Puedes añadir los campos que quieras (`resource`, `status`, `field`…).
 - Para distinguirlos usa `instanceof`: `if (e instanceof NotFoundError)`.
+- Y `this.name`… ¿hace falta?
 
-La opción `cause` sirve para **envolver** un error de bajo nivel en uno con más contexto sin perder el original:
+<AntesDeSeguir>
+
+La misma clase, sin `this.name`. ¿Qué imprime?
+
+```js
+class NotFoundError extends Error {
+  constructor(resource) {
+    super(resource + " no existe");
+  }
+}
+const e = new NotFoundError("pedido 7");
+console.log(String(e));
+console.log(e instanceof NotFoundError, e instanceof Error);
+```
+
+<Respuesta>
+
+```
+Error: pedido 7 no existe
+true true
+```
+
+`instanceof` funciona, pero `name` no se calcula a partir de la clase: se hereda de
+`Error.prototype`, donde vale `"Error"` (la cadena de prototipos que ya conoces). Sin
+`this.name`, en la consola y en los logs tu error se ve como uno cualquiera.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Desde ES2022, el segundo argumento de `Error` acepta `{ cause }`, que sirve para **envolver** un
+error de bajo nivel en uno con más contexto sin perder el original: grapas el parte original al
+nuevo.
 
 ```js
 try {
@@ -183,18 +486,43 @@ try {
 // Quien lo capture tiene el mensaje útil y, en e.cause, el SyntaxError original.
 ```
 
-## Relanzar o tragar
+### Relanzar o tragar
 
-Un `catch` que no hace nada, o que solo hace `console.log`, **se traga el error**: el programa sigue como si todo hubiera ido bien, con datos a medias, y el bug aparece lejos de su causa.
+Un mostrador que recoge el parte y lo tira a la papelera **se traga el error**: un `catch` vacío,
+o que solo hace `console.log`. El programa sigue como si todo hubiera ido bien, con datos a
+medias, y el bug aparece lejos de su causa.
+
+<AntesDeSeguir>
+
+¿Qué imprime? ¿Las dos llamadas fallan por lo mismo?
 
 ```js
-// Mal: atrapa TODO, incluso un TypeError por un typo tuyo
-try {
-  return JSON.parse(texto);
-} catch {
-  return null;
+function leerTema(texto) {
+  try {
+    const config = JSON.parse(texto);
+    return config.tema.toUpperCase();
+  } catch {
+    return null;
+  }
 }
+console.log(leerTema("{ roto"));
+console.log(leerTema('{"color":"azul"}'));
 ```
+
+<Respuesta>
+
+```
+null
+null
+```
+
+La primera es un `SyntaxError`: el texto no es JSON, un caso previsto. La segunda es un
+`TypeError` (`config.tema` es `undefined`), un bug que el `catch` escondió. Un typo tuyo daría el
+mismo `null`.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 La regla: **captura solo lo que sabes manejar y relanza el resto**.
 
@@ -207,27 +535,120 @@ try {
 }
 ```
 
-## Errores en código asíncrono
+---
 
-Una función `async` nunca lanza de forma síncrona: devuelve una **promesa rechazada**. Un `try/catch` solo captura ese rechazo si **espera** la promesa con `await` dentro del `try`. Sin `await`, la promesa (aunque ya esté rechazada) sale del `try` como un valor normal: dentro del bloque no se lanza nada, así que el `catch` no se ejecuta. Es `await` lo que convierte el rechazo en una excepción.
+## Partes que llegan cuando el mostrador ya cerró
+
+Aquí está la clave del ticket #129. Un mostrador de guardia **solo está abierto mientras se
+ejecuta su bloque**. Un parte que llega después no encuentra a nadie.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+try {
+  setTimeout(() => {
+    throw new Error("tarde");
+  }, 0);
+  console.log("try terminado");
+} catch (e) {
+  console.log("capturado");
+}
+console.log("después del try");
+```
+
+<Respuesta>
+
+```
+try terminado
+después del try
+Uncaught Error: tarde
+```
+
+`setTimeout` solo registra el callback. Cuando este se ejecuta, el `try` terminó hace rato: el
+parte sube por otra pila de llamadas, sin ese mostrador.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Con las promesas pasa algo parecido, con un matiz. Una función `async` **nunca lanza de forma
+síncrona**: si algo falla dentro, devuelve una **promesa rechazada**. Un `try/catch` solo captura
+ese rechazo si **espera** la promesa con `await` dentro del `try`. Sin `await`, la promesa
+(aunque ya esté rechazada) sale del `try` como un valor normal: dentro del bloque no se lanza
+nada, así que el `catch` no se ejecuta. Es `await` lo que convierte el rechazo en una excepción,
+con el mostrador todavía abierto. Esta pregunta pone a prueba la diferencia entre `return await`
+y `return` a secas:
 
 <Pregunta id="errores-return-sin-await" />
-
-Lo mismo pasa con callbacks: un `try` alrededor de `setTimeout(() => { throw … })` no captura nada, porque el callback se ejecuta mucho después, en otra pila de llamadas.
 
 <Callout type="clave">
 Un `try/catch` solo captura lo que se lanza **mientras se está ejecutando su bloque**. Para una promesa, eso significa que tiene que estar esperada con `await` dentro del `try`. Si no lo está, el error se escapa, sea código async, un `setTimeout` o un handler de eventos.
 </Callout>
 
-## Dónde capturar en React
+### El mostrador del turno de render
 
-Esta misma regla explica el segundo bug. Un **error boundary** es un componente que captura los errores que ocurren **mientras React renderiza** sus hijos (y en sus efectos y métodos de ciclo de vida) y muestra un fallback. Funciona como un `try/catch` alrededor del render.
+Un **error boundary** de React es un mostrador de guardia del **turno de render**: captura los
+errores que ocurren mientras React renderiza sus hijos (y en sus efectos y métodos de ciclo de
+vida) y muestra un fallback. Funciona como un `try/catch` alrededor del render.
 
-Pero un handler como `onClick` no se ejecuta durante el render: React lo llama más tarde, cuando el usuario hace click. Lo mismo vale para un `setTimeout` o lo que hagas después de un `fetch`.
+Pero un `onClick` no se ejecuta durante el render: React lo llama más tarde, cuando el usuario
+hace clic. Lo mismo vale para un `setTimeout` o lo que hagas después de un `fetch`. Esta pregunta
+pone a prueba si sabes qué ve un boundary y qué no:
 
 <Pregunta id="errores-boundary-evento" />
 
-En handlers y código async, captura tú el error y conviértelo en estado:
+---
+
+## Los tickets, resueltos
+
+**#128.** Luis ve a Ana porque `lib/vistos.js` se montó una sola vez en el proceso del servidor y
+todas las peticiones comparten el mismo array. Que `vistos` sea `const` no ayuda: impide
+reasignar, no mutar. Lo que sea de un usuario sale del módulo: a la base de datos, a una cookie o
+a una variable local de la función que atiende la petición.
+
+**#129, segunda pregunta.** El boundary es un mostrador del turno de render, y el clic ocurre en
+otro turno. El error queda sin capturar: sale en consola y el formulario sigue en pantalla.
+
+**#129, tercera pregunta.** El arreglo del compañero era este:
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+async function guardar() {
+  throw new Error("sin conexión");
+}
+function handleClick() {
+  try {
+    guardar();
+    console.log("try terminado");
+  } catch (e) {
+    console.log("capturado: " + e.message);
+  }
+}
+handleClick();
+console.log("handler terminado");
+```
+
+<Respuesta>
+
+```
+try terminado
+handler terminado
+Uncaught (in promise) Error: sin conexión
+```
+
+`guardar()` no lanzó: devolvió una promesa rechazada, que nadie esperó. El `try` terminó sin
+novedad y el rechazo quedó sin manejar.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+El arreglo es esperar dentro del `try` y convertir el error en estado:
 
 ```jsx
 function Formulario() {
@@ -250,20 +671,44 @@ function Formulario() {
 }
 ```
 
-Si prefieres que lo muestre el boundary, relanza el error durante el render (`if (error) throw error;`): ahí sí lo ve. Otra vía en React 19: los errores que se lanzan dentro de una Transition (`startTransition`, acciones de formulario) también llegan al boundary más cercano. En el App Router de Next.js, los archivos `error.js` son error boundaries con la misma regla.
+Si prefieres que lo muestre el boundary, relanza el error durante el render
+(`if (error) throw error;`): ahí sí lo ve. Otra vía en React 19: los errores que se lanzan dentro
+de una Transition (`startTransition`, acciones de formulario) también llegan al boundary más
+cercano. En el App Router de Next.js, los archivos `error.js` son error boundaries con la misma
+regla.
+
+---
 
 ## Práctica
 
+Cerrado el #128, el equipo de analítica pide un registro de plugins: cada plugin se registra solo
+al importarse, y todos tienen que acabar en el mismo sitio. Este ejercicio pone a prueba la
+evaluación única, los live bindings y lanzar un error cuando algo se registra dos veces:
+
 <Ejercicio id="modulos-registro" />
+
+Y el formulario de "Guardar" ahora acepta importar un usuario desde JSON. Antes de enviarlo hay
+que validarlo con partes de incidencia que digan qué campo falló, sin perder el error original.
+Este ejercicio pone a prueba una subclase de `Error`, `cause` y la regla de relanzar lo que no
+sabes manejar:
 
 <Ejercicio id="errores-validacion" />
 
-## Resumen
+---
 
-- Cada archivo es un **módulo** con su propio scope. Named exports con llaves y nombre exacto; un solo default por módulo; `import * as` da un namespace de solo lectura; los re-exports reúnen módulos.
-- Un módulo **se evalúa una sola vez** y todos los imports comparten la instancia: útil para singletons, peligroso para datos por usuario en el servidor.
-- Los imports son **live bindings**: ven el valor actual y no se pueden reasignar desde fuera.
-- `import()` devuelve una promesa del módulo y permite **code splitting** (`React.lazy`). Evita dependencias circulares sacando lo común a otro módulo. CommonJS es el sistema antiguo de Node, sin live bindings.
-- Lanza siempre `Error` o subclases con `name`; usa `cause` para añadir contexto sin perder el original.
-- `finally` se ejecuta siempre, también cuando `catch` relanza. Captura lo que sabes manejar y relanza el resto.
-- `try/catch` no ve promesas sin `await`, callbacks posteriores ni handlers de eventos. Los error boundaries capturan errores de render (y, en React 19, los lanzados dentro de una Transition): en handlers y código async, captura tú y guárdalo en el estado.
+## Lo que ahora puedes explicar
+
+Sabes por qué una variable de módulo en el servidor es una fuga de datos: el edificio se monta
+una vez y atiende a todos. Sabes que por la ventanilla de un `import` ves el valor actual pero no
+puedes cambiarlo, que `import()` construye anexos bajo demanda, y que un error es un parte que
+sube por la cadena de encargos hasta un mostrador abierto, con `finally` recogiendo siempre antes
+de irse. Y sabes por qué un boundary no ve un clic ni una promesa sin `await`.
+
+Con esta lección termina **JavaScript profundo**: closures que recuerdan su habitación, scopes y
+la TDZ, valores frente a referencias, `this` decidido en la llamada, prototipos detrás de las
+clases, colecciones, y ahora módulos y errores. Son las piezas que vas a combinar en el proyecto
+del módulo, el **store observable**: estado escondido en un closure, suscripciones e
+inmutabilidad para detectar cambios.
+
+El siguiente módulo, **DOM y eventos**, baja un nivel: a lo que React hace por ti cuando pinta
+una interfaz y reacciona a un clic.

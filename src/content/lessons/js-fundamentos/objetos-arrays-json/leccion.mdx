@@ -1,6 +1,12 @@
-## Dos bugs que ya has visto
+## Un panel de pedidos con tres fallos
 
-Pides los pedidos a tu API y los ordenas por fecha:
+Llevas una semana con el panel de pedidos de la tienda y hoy tienes este ticket:
+
+> **#553 — "Panel de pedidos: tres cosas raras".** Ordenar por fecha explota. El carrito "se
+> guarda", pero al recargar aparece vacío. Y el botón "Mayor importe primero" no hace nada hasta
+> que tocas otra cosa de la pantalla.
+
+El primer fallo está en la carga de datos:
 
 ```jsx
 const res = await fetch("/api/orders");
@@ -10,18 +16,85 @@ orders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 // TypeError: b.createdAt.getTime is not a function
 ```
 
-En el backend `createdAt` era un `Date`. En el cliente es un string. Y en otro componente, el carrito "se guarda" pero al recargar aparece vacío:
+En el backend `createdAt` era un `Date`. En el cliente es un string. El segundo, en el carrito:
 
 ```js
 localStorage.setItem("cart", cart);
 localStorage.getItem("cart"); // "[object Object]"
 ```
 
-Los dos bugs tienen la misma raíz: no saber exactamente qué es un objeto, qué es un array y qué sobrevive cuando los conviertes en texto. Ya usas objetos y arrays a diario; aquí vamos directos a los bordes donde se rompen.
+Y el tercero, en el componente que muestra la lista:
 
-## Objetos: punto vs corchetes
+```jsx
+const [orders, setOrders] = useState(initialOrders);
 
-Un objeto es una colección de pares clave/valor. Las claves son strings (o Symbols); todo lo demás se convierte en string.
+function sortNewest() {
+  const sorted = orders.sort((a, b) => b.total - a.total);
+  setOrders(sorted);
+}
+```
+
+Tres preguntas:
+
+1. ¿Por qué `createdAt` sale del servidor como `Date` y llega como string, si nadie lo convirtió?
+2. ¿Por qué `localStorage` guarda `"[object Object]"` en lugar de dar un error?
+3. ¿Por qué el botón no hace nada, si `sort` claramente ordena?
+
+Ya usas objetos y arrays a diario. Los tres fallos salen de no saber exactamente qué son, qué
+hacen sus métodos y qué sobrevive cuando los conviertes en texto. Así que aquí vamos directos a
+los bordes donde se rompen.
+
+---
+
+## Un formato que ya estaba dentro del lenguaje
+
+A principios de los 2000, las aplicaciones web empezaban a pedir datos al servidor sin recargar
+la página, y el formato de moda para intercambiarlos era XML: verboso y pesado de recorrer desde
+JavaScript. Douglas Crockford, entre otros, se fijó en algo que ya estaba ahí: la sintaxis con la
+que JavaScript escribe objetos y arrays literales (`{ "id": 1, "tags": ["a"] }`) también sirve
+como formato de datos. Le puso nombre, **JSON** (*JavaScript Object Notation*), publicó su
+gramática en json.org y lo popularizó. En sus charlas insiste en que no lo inventó: lo
+*descubrió*, porque ya estaba en el lenguaje.
+
+JSON acabó estandarizado de forma independiente de JavaScript (ECMA-404 y la RFC 8259) porque su
+objetivo era ser un formato de **intercambio entre cualquier lenguaje**. Eso explica su pobreza:
+solo admite lo que se puede escribir como **literal** y representar igual en Python, Java o Go.
+`null`, `true`, `false`, números, strings, arrays y objetos son literales. `undefined`, `NaN` e
+`Infinity` no lo son (en JavaScript son propiedades del objeto global). Una fecha tampoco: se fabrica con
+`new Date(…)`, que es código. Y una función es código, no datos. Nada de eso tiene sitio en JSON.
+
+<Profundiza titulo="del eval a JSON.parse, y un subconjunto que no lo era del todo">
+
+Al principio no había `JSON.parse`: como JSON era sintaxis de JavaScript, mucha gente lo leía con
+`eval(texto)`, que ejecuta como código lo que le llegue del servidor. Si alguien conseguía colar
+código en ese texto, se ejecutaba. Primero aparecieron librerías que validaban el texto antes de
+evaluarlo, y ECMAScript 5 (2009) incorporó el objeto `JSON` con `parse` y `stringify`, que leen
+datos sin ejecutar nada.
+
+Las claves van siempre entre comillas dobles por una razón parecida: en el JavaScript de entonces
+(ES3) una palabra reservada, como `do` o `class`, no podía usarse como clave sin comillas. Según
+cuenta Crockford, exigir comillas siempre le evitó tener que copiar la lista de palabras reservadas
+en la especificación de JSON.
+
+Un detalle curioso: durante años JSON *no* era un subconjunto exacto de JavaScript. Dentro de un
+string, JSON permitía los caracteres U+2028 y U+2029 (separadores de línea y de párrafo), y
+JavaScript no. ES2019 cambió la gramática de JavaScript para aceptarlos y cerrar la diferencia.
+
+</Profundiza>
+
+Con eso en mente, la imagen de la lección.
+
+---
+
+## Cajas con etiquetas dentro
+
+En "Variables y funciones", tu programa era una **mesa de trabajo** llena de valores,
+y las variables eran etiquetas atadas con un hilo a esos valores. Ahora miramos dos valores
+especiales de la mesa.
+
+**Un objeto es una caja con sus propias etiquetas dentro.** Cada etiqueta (una *propiedad*) tiene
+un nombre escrito y un hilo que la ata a otro valor de la mesa. Los nombres son siempre **strings**
+(o Symbols); si escribes otra cosa, se convierte en string al rotular la etiqueta.
 
 ```js
 const user = { name: "Ana", "full-name": "Ana Ruiz", 1: "uno" };
@@ -31,16 +104,46 @@ user["full-name"];  // user.full-name se leería como user.full - name (una rest
 user[1];            // "uno": la clave real es el string "1"
 ```
 
-La regla para elegir:
+<AntesDeSeguir>
 
-- **Punto** (`obj.clave`): el nombre es literal y es un identificador válido. Es lo normal.
-- **Corchetes** (`obj[expr]`): se **evalúa** la expresión y su resultado (convertido a string) es la clave. Hace falta cuando la clave está en una variable, viene de fuera o no es un identificador válido (`"full-name"`, `"1"`, `"data-id"`).
+¿Qué imprime?
 
-El error clásico es usar punto con una variable: `obj.key` busca la propiedad que se llama literalmente `"key"`, no la que indica la variable `key`.
+```js
+const precios = { 1: "uno", "2": "dos" };
+const clave = 1;
+console.log(precios[clave] === precios["1"], Object.keys(precios).join(","));
+console.log(typeof Object.keys(precios)[0]);
+```
 
-### Claves computadas y shorthand
+<Respuesta>
 
-En un literal, los corchetes también sirven para calcular la clave. Es lo que usas en el `handleChange` genérico de un formulario:
+```
+true 1,2
+string
+```
+
+Al rotular, el `1` se convirtió en `"1"`; al buscar, el número `clave` también se convierte en
+`"1"`. Por eso dan lo mismo, y `Object.keys` devuelve strings.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### Punto o corchetes: leer el rótulo o calcularlo
+
+Hay dos formas de buscar una etiqueta en la caja:
+
+- **Punto** (`obj.clave`): lo que escribes **es** el rótulo, letra por letra. Solo vale si es un
+  identificador válido. Es lo normal.
+- **Corchetes** (`obj[expr]`): se **evalúa** la expresión y su resultado, convertido a string, es
+  el rótulo. Hace falta cuando la clave está en una variable, viene de fuera o no es un
+  identificador válido (`"full-name"`, `"1"`, `"data-id"`).
+
+El error clásico es usar punto con una variable: `obj.key` busca la etiqueta que se llama
+literalmente `"key"`, no la que indica la variable `key`.
+
+En un literal, los corchetes también calculan el rótulo (**clave computada**). Es lo que usas en
+el `handleChange` genérico de un formulario:
 
 ```jsx
 function handleChange(e) {
@@ -64,11 +167,14 @@ const user = {
 };
 ```
 
+Esta pregunta mezcla punto, corchetes y una clave computada con la misma variable:
+
 <Pregunta id="objetos-corchetes-variable" />
 
-## Propiedades que no existen
+### Etiquetas que no están
 
-Leer una propiedad que no existe **no es un error**: devuelve `undefined`. El error llega al ir un nivel más:
+Buscar una etiqueta que no existe **no es un error**: no hay hilo, así que obtienes `undefined`.
+El error llega al ir un nivel más, al buscar una etiqueta dentro de algo que no es una caja:
 
 ```js
 const res = { data: {} };
@@ -77,9 +183,13 @@ res.data.user.name;   // TypeError: Cannot read properties of undefined
 res.data.user?.name;  // undefined: optional chaining corta la cadena
 ```
 
-Esto es lo que pasa en el primer render de un componente cuando los datos todavía no han llegado y haces `data.user.name`. El `TypeError` no está en la línea que "falla", sino en la suposición de que el nivel anterior existía.
+Esto es lo que pasa en el primer render de un componente cuando los datos todavía no han llegado
+y haces `data.user.name`. El `TypeError` no está en la línea que "falla", sino en la suposición de
+que el nivel anterior existía.
 
-Como leer da `undefined` tanto si la propiedad no existe como si existe con valor `undefined`, para distinguirlo tienes el operador `in`. Y para quitar una propiedad, `delete` (asignar `undefined` no la elimina):
+Como leer da `undefined` tanto si la etiqueta no existe como si existe atada a `undefined`, para
+distinguirlo tienes el operador `in`. Y para arrancar una etiqueta, `delete` (atarla a
+`undefined` no la quita):
 
 ```js
 const settings = { theme: "dark" };
@@ -88,15 +198,18 @@ delete settings.theme;   // la propiedad deja de existir
 "theme" in settings;     // false
 ```
 
+Esta pregunta pone a prueba justo esa diferencia: una etiqueta atada a `undefined`, una que no
+existe, y qué pasa al ir un nivel más:
+
 <Pregunta id="objetos-inexistente-in-delete" />
 
 <Callout type="nota">
 `in` también encuentra propiedades heredadas: `"toString" in {}` es `true`. Para preguntar solo por las propias existe `Object.hasOwn`. La diferencia, junto con `Object.keys`/`entries` y el orden de las claves, se ve a fondo en el módulo de JavaScript profundo ("Objetos y colecciones"). Igual que por qué `{}` no es igual a `{}` y qué significa copiar un objeto: eso es "Valores y referencias".
 </Callout>
 
-### Objetos como diccionarios
+### La caja como diccionario
 
-Con corchetes, un objeto sirve de diccionario con claves dinámicas:
+Con corchetes, una caja sirve de diccionario con rótulos dinámicos:
 
 ```js
 const countByStatus = {};
@@ -106,36 +219,102 @@ for (const order of orders) {
 // { paid: 12, pending: 3 }
 ```
 
-Funciona bien con claves de tipo string controladas por ti. Si las claves no son strings o vienen del usuario (y una podría llamarse `"constructor"` o `"__proto__"`), un `Map` es mejor herramienta; también está en el módulo 3.
+Funciona bien con claves de tipo string controladas por ti. Si las claves no son strings o vienen
+del usuario (y una podría llamarse `"constructor"` o `"__proto__"`), un `Map` es mejor
+herramienta; también está en el módulo 3.
 
-## Arrays: índices y length
+---
 
-Un array es un objeto especial cuyas claves son índices (`"0"`, `"1"`…) y que mantiene `length` sincronizado. Lo importante:
+## La caja con etiquetas numeradas
+
+Segunda capa. **Un array es una caja cuyas etiquetas son números en orden** (`"0"`, `"1"`,
+`"2"`…, strings como todas) y que lleva pegado un **contador**, `length`, que se mantiene
+sincronizado con ellas.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
 
 ```js
 const list = ["a", "b", "c"];
-list[10];        // undefined, sin error (como cualquier propiedad inexistente)
-list.at(-1);     // "c": at acepta índices negativos
-list[-1];        // undefined: con corchetes, -1 es solo la clave "-1"
-Array.isArray(list);  // true (typeof list es "object")
+console.log(list[10], list.at(-1), list[-1]);
+console.log(typeof list, Array.isArray(list));
 ```
 
-`length` no es solo de lectura. Asignarlo **trunca o amplía el array en sitio**:
+<Respuesta>
+
+```
+undefined c undefined
+object true
+```
+
+`list[10]` es una etiqueta que no existe: `undefined`, sin error, como en cualquier caja. `at`
+acepta índices negativos y cuenta desde el final. Con corchetes, en cambio, `-1` es solo el rótulo
+`"-1"`, que no existe. Y como un array es una caja, `typeof` dice `"object"`: la forma fiable de
+detectarlo es `Array.isArray`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+### El contador se puede tocar
+
+`length` no es solo de lectura. Si le escribes, la caja **se ajusta en sitio** al contador:
 
 ```js
 list.length = 1;   // list es ["a"]
 list.length = 3;   // list es ["a", <2 huecos>]
 ```
 
-Esos **huecos** (*holes*) no son `undefined`: son posiciones que no existen. Aparecen con `new Array(3)`, con `[1, , 3]` o al ampliar `length`, y cada método los trata a su manera (`forEach` y `map` se los saltan, `join` los convierte en cadenas vacías). No los crees a propósito: si necesitas un array de N elementos, usa `Array.from({ length: n }, (_, i) => i)` o `new Array(n).fill(0)`.
+Esos **huecos** (*holes*) no son `undefined`: son números del contador que no tienen etiqueta.
+Aparecen con `new Array(3)`, con `[1, , 3]` o al ampliar `length`, y cada método los trata a su
+manera.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const a = [1, , 3];
+console.log(a.length, a[1], 1 in a);
+console.log(a.map((x) => x * 2).join("-"));
+```
+
+<Respuesta>
+
+```
+3 undefined false
+2--6
+```
+
+El contador dice 3, leer el hueco da `undefined` (no hay etiqueta), pero `1 in a` confirma que la
+etiqueta `"1"` no existe. `map` se salta el hueco y lo conserva en el resultado, y `join` lo
+convierte en una cadena vacía: de ahí los dos guiones seguidos. `forEach` también se lo salta.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+No crees huecos a propósito: si necesitas un array de N elementos, usa
+`Array.from({ length: n }, (_, i) => i)` o `new Array(n).fill(0)`.
+
+Esta pregunta junta las dos cosas: vaciar con `length` cuando dos variables apuntan al mismo array,
+y ampliar con huecos:
 
 <Pregunta id="arrays-length-vaciar" />
 
-`list.length = 0` como forma de "vaciar" es justo el problema: vacía el array que comparten todos los que tienen una referencia a él (por ejemplo, el estado de React o una prop). Si quieres "una lista vacía", asigna una nueva: `setItems([])`.
+`list.length = 0` como forma de "vaciar" es justo el problema: vacía la caja que comparten todos
+los que tienen un hilo atado a ella (por ejemplo, el estado de React o una prop). Si quieres "una
+lista vacía", asigna una nueva: `setItems([])`.
 
-## Métodos que mutan y métodos que no
+---
 
-En React esta es la distinción que más importa: si mutas el array del estado y llamas a `setState` con el mismo array, React compara con `Object.is`, ve la misma referencia y puede no volver a renderizar.
+## Reformar la caja o construir otra al lado
+
+Tercera capa, y la que más importa en React. Hay métodos que **reforman la caja que ya existe**
+(mutan) y métodos que **construyen una caja nueva al lado** y dejan la original intacta. Si mutas
+el array del estado y llamas a `setState` con el mismo array, React compara con `Object.is`, ve la
+misma referencia (el mismo hilo a la misma caja) y puede no volver a renderizar.
 
 | Mutan el array original | Devuelven un array nuevo |
 |---|---|
@@ -146,35 +325,112 @@ En React esta es la distinción que más importa: si mutas el array del estado y
 | `reverse()`: devuelve el mismo array | `toReversed()` |
 | `arr[i] = x`, `fill(x)` | `with(i, x)` |
 
-Fíjate en la columna de los que mutan: **lo que devuelven** también confunde. `push` no devuelve el array (devuelve un número), `splice` devuelve lo que quitó, y `sort`/`reverse` devuelven el mismo array, así que `const sorted = arr.sort()` parece una copia y no lo es. `toSorted`, `toReversed`, `toSpliced` y `with` (ES2023) existen precisamente para tener la versión que no muta de cada uno. Además, `with` lanza `RangeError` si el índice está fuera de rango, en vez de crear huecos.
+Fíjate en la columna de los que mutan: **lo que devuelven** también confunde.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const nums = [3, 1, 2];
+const n = nums.push(0);
+const sorted = nums.sort((a, b) => a - b);
+console.log(n, sorted === nums, nums.join(","));
+```
+
+<Respuesta>
+
+```
+4 true 0,1,2,3
+```
+
+`push` no devuelve el array, sino el nuevo `length`. Y `sort` devuelve **la misma caja** que acaba
+de reformar: `sorted` parece una copia ordenada y es otro hilo atado al mismo array.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+`splice`, por su parte, devuelve lo que quitó. `toSorted`, `toReversed`, `toSpliced` y `with`
+(ES2023) existen precisamente para tener la versión que no muta de cada uno. Además, `with` lanza
+`RangeError` si el índice está fuera de rango, en vez de crear huecos.
+
+Esta pregunta compara `splice` con `toSpliced` sobre el mismo array y mira qué devuelve cada uno:
 
 <Pregunta id="arrays-splice-retorno" />
 
-## Buscar: includes vs indexOf
+### Buscar en la caja: includes vs indexOf
 
-`indexOf` compara con `===`, y como `NaN === NaN` es `false`, nunca encuentra `NaN`. `includes` usa otro algoritmo (*SameValueZero*) que sí lo encuentra. Si solo quieres saber si algo está, `includes` es más claro; usa `indexOf` cuando necesites la posición (ojo: los dos comparan objetos por referencia, así que para buscar un objeto por su contenido usa `find`/`findIndex` con una condición).
+`indexOf` compara con `===`, y como `NaN === NaN` es `false`, nunca encuentra `NaN`. `includes`
+usa otro algoritmo (*SameValueZero*) que sí lo encuentra. Si solo quieres saber si algo está,
+`includes` es más claro; usa `indexOf` cuando necesites la posición. Ojo: los dos comparan objetos
+por referencia (¿es **esta** caja?), así que para buscar un objeto por su contenido usa
+`find`/`findIndex` con una condición.
+
+Esta pregunta pone a prueba las dos búsquedas con `NaN` y con un hueco:
 
 <Pregunta id="arrays-nan-includes" />
 
-## JSON: el formato de texto
+---
 
-JSON es un formato de **texto** con una sintaxis inspirada en los literales de JavaScript, pero mucho más pobre: strings (siempre con comillas dobles), números finitos, `true`/`false`, `null`, arrays y objetos con claves string. Nada más.
+## La mesa no viaja: viaja una carta
+
+Última capa. Las cajas y los hilos existen en la memoria de **un** programa. Cuando los datos
+tienen que salir de ahí (por la red, a `localStorage`, del servidor al navegador), la mesa no
+puede viajar. Lo que viaja es **una carta**: una descripción en texto de lo que hay en la mesa,
+escrita con un vocabulario muy limitado. Al otro lado, alguien lee la carta y **construye una mesa
+nueva** con piezas nuevas.
+
+JSON es ese vocabulario: strings (siempre con comillas dobles), números finitos, `true`/`false`,
+`null`, arrays y objetos con claves string. Nada más.
 
 ```js
 const text = JSON.stringify({ id: 1, tags: ["a"] }); // '{"id":1,"tags":["a"]}'
 const data = JSON.parse(text);                        // un objeto nuevo
 ```
 
-Esto explica el segundo bug: `localStorage` solo guarda strings, y `setItem` convierte el valor con `String(value)`. Un objeto convertido a string es `"[object Object]"`. Hay que serializar tú:
+`JSON.stringify` escribe la carta; `JSON.parse` la lee y construye cajas nuevas.
+
+### Quien no sabe escribir la carta
+
+¿Y si mandas la caja sin escribir la carta? `localStorage` solo guarda strings, y `setItem`
+convierte lo que le pases con `String(value)`.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+console.log(String({ id: 1 }));
+console.log(String([1, 2]), String([]) === "");
+```
+
+<Respuesta>
+
+```
+[object Object]
+1,2 true
+```
+
+`String` no describe el contenido de un objeto: escribe una etiqueta genérica,
+`"[object Object]"`. Con arrays es aún más traicionero, porque hace un `join(",")` que *parece*
+funcionar, pero se pierde toda la estructura. Ninguno de los dos lanza un error.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+La carta la tienes que escribir tú:
 
 ```js
 localStorage.setItem("cart", JSON.stringify(cart));
 const savedCart = JSON.parse(localStorage.getItem("cart") ?? "null");
 ```
 
-### Qué sobrevive a JSON.stringify
+### Lo que no cabe en la carta
 
-Todo lo que JSON no puede representar se transforma o desaparece **sin avisar**:
+Todo lo que el vocabulario de JSON no puede representar se transforma o desaparece **sin
+avisar**:
 
 | Valor en JavaScript | Resultado en JSON | Al hacer `JSON.parse` |
 |---|---|---|
@@ -187,20 +443,46 @@ Todo lo que JSON no puede representar se transforma o desaparece **sin avisar**:
 | instancias de clase | solo sus propiedades propias enumerables | objeto plano, sin métodos |
 | `BigInt` | lanza `TypeError` | |
 
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const draft = { a: undefined, b: () => 1, c: [undefined, NaN], d: 2 };
+console.log(JSON.stringify(draft));
+```
+
+<Respuesta>
+
+```
+{"c":[null,null],"d":2}
+```
+
+En un objeto, la propiedad que no se puede escribir se omite entera. En un array no se puede
+omitir sin mover las posiciones de los demás, así que se escribe `null` en su lugar.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+Esta pregunta hace el viaje completo de ida y vuelta con una fecha, un `Map` e `Infinity`:
+
 <Pregunta id="json-roundtrip-fecha-map" />
 
-Ese es el primer bug: la API serializó el `Date` como string con `JSON.stringify` y `res.json()` te devolvió un string. Nadie lo convierte de vuelta salvo que tú lo hagas.
+### Revivir lo que llegó como texto
 
-### replacer, space y reviver
-
-`JSON.stringify(valor, replacer, space)` acepta dos argumentos más. `replacer` puede ser un array de claves permitidas (útil para no filtrar campos sensibles) o una función; `space` indenta la salida:
+`JSON.stringify(valor, replacer, space)` acepta dos argumentos más. `replacer` puede ser un array
+de claves permitidas (útil para no filtrar campos sensibles) o una función; `space` indenta la
+salida:
 
 ```js
 JSON.stringify(user, ["id", "name"]);       // solo esas claves
 JSON.stringify(config, null, 2);            // legible, con 2 espacios
 ```
 
-`JSON.parse(texto, reviver)` llama a `reviver(clave, valor)` para cada valor, de dentro hacia fuera y en todos los niveles; lo que devuelvas sustituye al valor. Es la forma de **revivir las fechas**:
+Al leer, `JSON.parse(texto, reviver)` llama a `reviver(clave, valor)` para cada valor, de dentro
+hacia fuera y en todos los niveles; lo que devuelvas sustituye al valor. Es la forma de **revivir
+las fechas**, de convertir otra vez en `Date` lo que la carta solo pudo describir como texto:
 
 ```js
 const order = JSON.parse(text, (key, value) =>
@@ -209,39 +491,172 @@ const order = JSON.parse(text, (key, value) =>
 order.createdAt.getTime(); // ahora sí
 ```
 
-En aplicaciones grandes esto suele hacerse en la capa de datos (un esquema de Zod con `z.coerce.date()`, por ejemplo), pero el mecanismo es el mismo: alguien tiene que convertir el string de vuelta.
+En aplicaciones grandes esto suele hacerse en la capa de datos (un esquema de Zod con
+`z.coerce.date()`, por ejemplo), pero el mecanismo es el mismo: alguien tiene que convertir el
+string de vuelta.
 
-### JSON.parse lanza
+### Cartas ilegibles
 
-Con un texto inválido, `JSON.parse` lanza `SyntaxError`. Si los datos vienen de `localStorage`, de una URL o de cualquier sitio que el usuario (o una versión antigua de tu app) puede haber dejado corrupto, envuélvelo en `try/catch` y devuelve un valor por defecto. Un detalle: `getItem` devuelve `null` si la clave no existe, y `JSON.parse(null)` no lanza, devuelve `null` (convierte `null` al texto `"null"`).
+Con un texto inválido, `JSON.parse` lanza `SyntaxError`. Si la carta viene de `localStorage`, de
+una URL o de cualquier sitio que el usuario (o una versión antigua de tu app) puede haber dejado
+corrupto, envuélvelo en `try/catch` y devuelve un valor por defecto.
+
+<AntesDeSeguir>
+
+`getItem` devuelve `null` si la clave no existe. ¿Qué imprime?
+
+```js
+console.log(JSON.parse(null));
+try {
+  JSON.parse("[object Object]");
+} catch (e) {
+  console.log(e.name);
+}
+```
+
+<Respuesta>
+
+```
+null
+SyntaxError
+```
+
+`JSON.parse(null)` no lanza: convierte `null` en el texto `"null"`, que es JSON válido, y devuelve
+`null`. En cambio, el `"[object Object]"` que dejó el bug del carrito no es JSON y lanza. Tu
+código de carga tiene que contemplar los dos casos.
+
+</Respuesta>
+
+</AntesDeSeguir>
 
 <Callout type="cuidado">
 Comparar objetos con `JSON.stringify(a) === JSON.stringify(b)` es frágil: el resultado depende del **orden de las claves** (`{ a: 1, b: 2 }` y `{ b: 2, a: 1 }` dan strings distintos), y además ignora todo lo que JSON pierde (`{ x: undefined }` sale igual que `{}`, y `NaN` igual que `null`). Sirve para un test rápido, no como igualdad profunda. Y `JSON.parse(JSON.stringify(x))` como "copia profunda" pierde fechas, Maps y `undefined`: para eso existe `structuredClone`.
 </Callout>
 
-## Qué cruza del servidor al cliente
+### Qué cruza del servidor al cliente
 
-En Next.js, los datos pasan del servidor al navegador serializados. Qué se puede pasar depende del canal:
+En Next.js, los datos pasan del servidor al navegador serializados: siempre viajan como carta. Lo
+que cambia es el vocabulario, que depende del canal:
 
-- **Respuestas HTTP** (Route Handlers, APIs externas, `fetch` + `res.json()`): JSON puro. Todo lo de la tabla anterior aplica.
-- **Pages Router** (`getServerSideProps`, `getStaticProps`): las props deben poder serializarse con `JSON.stringify`. Devolver un `Date` da un error de serialización y hay que convertirlo a string antes.
-- **App Router** (props de un Server Component a un Client Component): React usa su propio formato, más rico que JSON, que sí admite `Date`, `Map`, `Set`, `undefined` o `BigInt`. Pero no admite funciones normales (solo Server Functions) ni instancias de clases propias: un `onClick` no puede cruzar.
+- **Respuestas HTTP** (Route Handlers, APIs externas, `fetch` + `res.json()`): JSON puro. Todo lo
+  de la tabla anterior aplica.
+- **Pages Router** (`getServerSideProps`, `getStaticProps`): las props deben poder serializarse
+  con `JSON.stringify`. Devolver un `Date` da un error de serialización y hay que convertirlo a
+  string antes.
+- **App Router** (props de un Server Component a un Client Component): React usa su propio
+  formato, más rico que JSON, que sí admite `Date`, `Map`, `Set`, `undefined` o `BigInt`. Pero no
+  admite funciones normales (solo Server Functions) ni instancias de clases propias: un `onClick`
+  no puede cruzar.
 
 <Callout type="clave">
 Cada vez que un dato cruza una frontera (red, almacenamiento, servidor → cliente), pregúntate qué formato de serialización usa y qué tipos se pierden. La respuesta casi siempre es "JSON, así que fechas → strings".
 </Callout>
 
-## Práctica
+---
+
+## El ticket, resuelto
+
+**¿Por qué `createdAt` llega como string?** Porque la mesa del servidor no viajó: viajó una carta.
+Al escribirla, `JSON.stringify` describió el `Date` como un string ISO; al leerla, `res.json()`
+construyó un objeto nuevo con un string en ese sitio. JSON no tiene vocabulario para fechas, y
+nadie lo convierte de vuelta salvo que tú lo hagas con un `reviver` o en la capa de datos.
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+const sent = JSON.stringify({ createdAt: new Date(0) });
+console.log(sent);
+const received = JSON.parse(sent);
+console.log(typeof received.createdAt);
+```
+
+<Respuesta>
+
+```
+{"createdAt":"1970-01-01T00:00:00.000Z"}
+string
+```
+
+Ese es el viaje del primer bug, en cuatro líneas.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+**¿Por qué `localStorage` guarda `"[object Object]"`?** Porque se le pasó la caja sin escribir la
+carta: `setItem` solo guarda strings y convierte con `String(value)`, que no lanza error. La
+solución es `JSON.stringify` al guardar y `JSON.parse` (con `try/catch`, porque ese
+`"[object Object]"` ya está guardado en algún navegador) al leer.
+
+**¿Por qué el botón no hace nada?** Porque `sort` reformó la caja del estado y devolvió **esa
+misma caja**. `setOrders(sorted)` le entrega a React el mismo array que ya tenía, `Object.is` dice
+que no cambió nada y React puede saltarse el render; el nuevo orden solo aparece cuando otro
+cambio fuerza uno. Una imitación mínima:
+
+<AntesDeSeguir>
+
+¿Qué imprime?
+
+```js
+let state = [{ id: 1, t: 2 }, { id: 2, t: 5 }];
+function setState(next) {
+  if (Object.is(next, state)) return console.log("misma referencia: sin render");
+  state = next;
+  console.log("array nuevo: render");
+}
+const newest = (a, b) => b.t - a.t;
+setState(state.sort(newest));
+setState(state.toSorted(newest));
+console.log(state.map((o) => o.id).join(","));
+```
+
+<Respuesta>
+
+```
+misma referencia: sin render
+array nuevo: render
+2,1
+```
+
+El primer `sort` sí ordenó (por eso el resultado final es `2,1`), pero sobre la caja que React ya
+tenía. `toSorted` construye una caja nueva al lado, y esa sí la detecta. El arreglo del ticket es
+`setOrders(orders.toSorted(…))`.
+
+</Respuesta>
+
+</AntesDeSeguir>
+
+---
+
+## Práctica: cerrar el ticket
+
+Queda dejar el carrito bien hecho. Este ejercicio pone a prueba todo el viaje de la carta:
+escribirla con `JSON.stringify`, revivir las fechas con un `reviver` (también las anidadas) y
+protegerte de lo que no está o está corrupto:
 
 <Ejercicio id="json-carrito-persistente" />
 
+En la revisión del PR aparece un archivo de utilidades para la lista de pedidos que reforma la
+caja del estado en lugar de construir otra. Este ejercicio pone a prueba que elijas la versión que
+no muta de cada método, con índices negativos y fuera de rango:
+
 <Ejercicio id="arrays-sin-mutar" />
 
-## Resumen
+---
 
-- **Punto** para nombres literales; **corchetes** cuando la clave está en una variable, se calcula o no es un identificador válido. `{ [clave]: valor }` calcula la clave en un literal.
-- Una propiedad que no existe da `undefined`; el `TypeError` llega al leer algo **de** ese `undefined`. `in` distingue "no existe" de "vale `undefined`"; `delete` elimina la propiedad.
-- `length` se puede asignar y trunca el array en sitio; `at(-1)` lee el último; `Array.isArray` es la forma fiable de detectar un array.
-- `push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse` y `fill` **mutan**. `slice`, `concat`, `toSorted`, `toReversed`, `toSpliced` y `with` devuelven uno nuevo. Mira también qué devuelve cada uno.
-- `includes` encuentra `NaN`; `indexOf` no.
-- JSON solo tiene strings, números finitos, booleanos, `null`, arrays y objetos: las fechas vuelven como strings, `Map`/`Set` como `{}`, `NaN`/`Infinity` como `null`, y `undefined`/funciones desaparecen. Revive con un `reviver` y protege `JSON.parse` con `try/catch`.
+## Lo que ahora puedes explicar
+
+Ahora sabes que un objeto es una caja con etiquetas cuyos rótulos son strings, que el punto lee el
+rótulo tal cual y los corchetes lo calculan, y que una etiqueta que no existe no es un error hasta
+que intentas abrir algo dentro de ella. Sabes que un array es esa misma caja con etiquetas
+numeradas y un contador que se puede tocar (y dejar huecos), que la mitad de sus métodos reforma
+la caja y la otra mitad construye una nueva, y por qué en React solo la segunda mitad sirve para el
+estado. Y cuando un dato cruza una frontera, ya no esperas que llegue la mesa: llega una carta, y
+sabes qué se queda por el camino y cómo revivirlo.
+
+Has visto `map` saltándose huecos y `toSorted` ordenando sin mutar, pero apenas has abierto la caja
+de herramientas. La siguiente lección, "Métodos de array", se dedica a ella: `map`, `filter`, `find`,
+`reduce` y compañía, qué devuelve cada uno y cómo encadenarlos sin perder de vista qué caja tienes
+en la mano.
