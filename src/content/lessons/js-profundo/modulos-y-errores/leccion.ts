@@ -8,9 +8,9 @@ export const modulosYErrores: LessonDef = {
   slug: "modulos-y-errores",
   title: "Módulos y errores",
   summary:
-    "Por qué una variable de módulo en Next.js puede filtrar datos entre usuarios y por qué tu error boundary no ve el error de un onClick: cómo se evalúan los módulos ES y cómo viajan los errores.",
+    "Dos tickets: un Next.js que filtra nombres entre usuarios y un error boundary que no ve el error de Guardar. De la era de los script tags a los módulos ES (evaluación única, live bindings, import()) y de throw a Error.cause: cómo viaja un error y dónde se puede capturar.",
   concepts: ["js.modulos", "js.errores"],
-  minutes: 40,
+  minutes: 50,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
