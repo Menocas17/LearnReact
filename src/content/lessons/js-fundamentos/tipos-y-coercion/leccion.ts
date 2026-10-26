@@ -8,9 +8,9 @@ export const tiposYCoercion: LessonDef = {
   slug: "tipos-y-coercion",
   title: "Tipos y coerción",
   summary:
-    "Por qué sumar la cantidad de un input da \"21\" y por qué if (user.age) falla con 0: tipos, operadores y las reglas de conversión implícita.",
+    "Un carrito que muestra \"21\" y confunde el 0 con el vacío: por qué JavaScript cambia tipos en vez de fallar, y las reglas de typeof, operadores, coerción e igualdad.",
   concepts: ["js.valores-tipos", "js.operadores", "js.coercion"],
-  minutes: 40,
+  minutes: 55,
   questions: preguntas,
   exercises: ejercicios,
   videos: [
