@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { revealSolution } from "@/app/modulos/actions";
 
@@ -18,23 +18,28 @@ type Props = {
   starter: Readonly<Record<string, string>>;
   tests: Readonly<Record<string, string>>;
   hints: readonly string[];
+  label?: string;
+  /** Sustituye la cabecera por defecto (título e instrucciones). */
+  header?: ReactNode;
 };
 
-export function ExerciseClient({ id, title, instructions, starter, tests, hints }: Props) {
+export function ExerciseClient({ id, title, instructions, starter, tests, hints, label = "Ejercicio", header }: Props) {
   const [hintCount, setHintCount] = useState(0);
   const [solution, setSolution] = useState<Record<string, string> | null>(null);
   const [pending, startTransition] = useTransition();
 
   return (
     <section className="not-prose space-y-4 rounded-lg border border-border bg-card p-5">
-      <div className="space-y-1">
-        <p className="text-xs font-semibold tracking-wide text-muted uppercase">Ejercicio</p>
-        <h3 className="text-lg font-semibold">{title}</h3>
-        <p className="text-sm leading-relaxed">{instructions}</p>
-        <p className="text-xs text-muted">
-          Los tests son la especificación: léelos, escribe tu solución y ejecútalos.
-        </p>
-      </div>
+      {header ?? (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold tracking-wide text-muted uppercase">{label}</p>
+          <h3 className="text-lg font-semibold">{title}</h3>
+          <p className="text-sm leading-relaxed">{instructions}</p>
+          <p className="text-xs text-muted">
+            Los tests son la especificación: léelos, escribe tu solución y ejecútalos.
+          </p>
+        </div>
+      )}
 
       <ExerciseSandbox id={id} starter={starter} tests={tests} />
 

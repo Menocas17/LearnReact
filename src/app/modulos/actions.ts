@@ -5,6 +5,7 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { exerciseResult, lessonProgress, questionAttempt } from "@/db/schema";
+import { getBug } from "@/content/bugs";
 import { findLessonExercise, findLessonQuestion, lessons } from "@/content/lessons";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { answerInput, type AnswerInput } from "@/lib/questions/answer-input";
@@ -33,10 +34,15 @@ export async function answerLessonQuestion(raw: AnswerInput): Promise<AnswerResu
 const exerciseId = z.string().min(1).max(200);
 
 /** Se llama cuando todos los tests del ejercicio pasan en el navegador. */
+/** Los bugs comparten la tabla de resultados con los ejercicios de las lecciones. */
+function findExercise(id: string) {
+  return findLessonExercise(id)?.exercise ?? getBug(id);
+}
+
 export async function recordExercisePassed(rawId: string) {
   const id = exerciseId.parse(rawId);
   const user = await getCurrentUser();
-  if (!findLessonExercise(id)) throw new Error("Ejercicio no válido");
+  if (!findExercise(id)) throw new Error("Ejercicio no válido");
   const db = await getDb();
   await db.insert(exerciseResult).values({ userId: user.id, exerciseId: id }).onConflictDoNothing();
   refresh();
@@ -46,9 +52,9 @@ export async function recordExercisePassed(rawId: string) {
 export async function revealSolution(rawId: string): Promise<Record<string, string>> {
   const id = exerciseId.parse(rawId);
   await getCurrentUser();
-  const found = findLessonExercise(id);
+  const found = findExercise(id);
   if (!found) throw new Error("Ejercicio no válido");
-  return { ...found.exercise.solution };
+  return { ...found.solution };
 }
 
 export async function completeLesson(rawId: string) {

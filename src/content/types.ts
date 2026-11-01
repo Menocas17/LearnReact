@@ -140,3 +140,23 @@ export type LessonDef = {
   /** Fecha de la última revisión y versiones de las herramientas que asume. */
   reviewed: { date: string; versions?: Readonly<Record<string, string>> };
 };
+
+export type BugLevel = "principiante" | "intermedio" | "avanzado";
+
+/** Un bug para resolver como en el trabajo: el código del alumno es el que falla. */
+export type BugReport = {
+  reportedBy: string;
+  /** Dónde ocurre: pantalla o módulo afectado. */
+  where: string;
+  steps: readonly string[];
+  actual: string;
+  expected: string;
+};
+
+export type BugDef = ExerciseDef & {
+  level: BugLevel;
+  report: BugReport;
+  moduleId: string;
+  /** Lección donde se explica la causa (si el módulo ya tiene lecciones). */
+  lessonId?: string;
+};
