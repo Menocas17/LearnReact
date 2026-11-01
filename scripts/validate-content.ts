@@ -9,12 +9,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { concepts, modules } from "../src/content/curriculum";
 import { diagnosticQuestions, diagnosticSections } from "../src/content/diagnostic";
+import { bugs } from "../src/content/bugs";
 import { lessons, publishedModules } from "../src/content/lessons";
 import { lessonIdsWithContent } from "./lib/mdx-registry";
 import type { Question } from "../src/content/types";
 import { checkLessonMdx } from "./lib/check-mdx";
 import { checkGraph, checkQuestion, checkSections, type Problem } from "./lib/checks";
 import { runExerciseVariants } from "./lib/run-exercise";
+import { allPassed, runWithBrowserRunner } from "./lib/run-in-browser-runner";
 import { normalizeOutput, runSnippet } from "./lib/run-snippet";
 
 const problems: Problem[] = [];
@@ -101,7 +103,14 @@ for (const lesson of lessons) {
     for (const c of ex.concepts) if (!conceptIds.has(c)) problems.push(`Ejercicio ${ex.id}: concepto inexistente ${c}`);
   }
 }
-const allExercises = lessons.flatMap((l) => l.exercises);
+const lessonIds = new Set(lessons.map((l) => l.id));
+for (const bug of bugs) {
+  if (exerciseIds.has(bug.id)) problems.push(`Bug con id repetido: ${bug.id}`);
+  exerciseIds.add(bug.id);
+  if (!lessonIds.has(bug.lessonId)) problems.push(`Bug ${bug.id}: lección inexistente ${bug.lessonId}`);
+  for (const c of bug.concepts) if (!conceptIds.has(c)) problems.push(`Bug ${bug.id}: concepto inexistente ${c}`);
+}
+const allExercises = [...lessons.flatMap((l) => l.exercises), ...bugs];
 const results = await runExerciseVariants(
   allExercises.flatMap((ex) => [
     { key: `${ex.id}--solucion`, files: ex.solution, tests: ex.tests },
@@ -112,7 +121,15 @@ for (const ex of allExercises) {
   if (!results.get(`${ex.id}--solucion`)) problems.push(`Ejercicio ${ex.id}: la solución no pasa los tests`);
   if (results.get(`${ex.id}--inicial`)) problems.push(`Ejercicio ${ex.id}: el código inicial ya pasa los tests`);
 }
-console.log(`  ${lessons.length} lecciones, ${exerciseIds.size} ejercicios verificados`);
+// El navegador usa otro runner (src/lib/test-runner): debe dar el mismo veredicto que Vitest.
+process.on("unhandledRejection", () => {});
+for (const ex of allExercises) {
+  if (!allPassed(await runWithBrowserRunner({ ...ex.solution, ...ex.tests })))
+    problems.push(`Ejercicio ${ex.id}: la solución no pasa en el runner del navegador`);
+  if (allPassed(await runWithBrowserRunner({ ...ex.starter, ...ex.tests })))
+    problems.push(`Ejercicio ${ex.id}: el código inicial pasa en el runner del navegador`);
+}
+console.log(`  ${lessons.length} lecciones, ${bugs.length} bugs, ${exerciseIds.size} ejercicios verificados (Vitest y runner del navegador)`);
 
 // 5. Cobertura de módulos publicados -------------------------------------------
 section("Cobertura");
@@ -167,3 +184,5 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log("\n✓ Contenido válido");
+// El código inicial de algunos ejercicios deja timers vivos a propósito (el bug): se sale explícitamente.
+process.exit(0);

@@ -15,6 +15,7 @@ const nav = [
   { href: "/", label: "Inicio" },
   { href: "/diagnostico", label: "Diagnóstico" },
   { href: "/mapa", label: "Mapa" },
+  { href: "/bugs", label: "Bugs" },
   { href: "/progreso", label: "Progreso" },
 ];
 
