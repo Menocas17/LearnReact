@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { bugs, levelLabel } from "@/content/bugs";
+import { getModuleById } from "@/content/curriculum";
 import { lessons } from "@/content/lessons";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getPassedExercises } from "@/lib/data/progress";
@@ -18,29 +19,40 @@ export default function BugsPage() {
           quedó resuelto. Si te atascas, cada bug enlaza a la lección que explica la causa.
         </p>
       </header>
-      <ol className="space-y-2">
-        {bugs.map((bug) => {
-          const lesson = lessons.find((l) => l.id === bug.lessonId);
-          return (
-            <li key={bug.id}>
-              <Card className="flex items-center justify-between gap-4 p-4">
-                <div className="space-y-1">
-                  <Link href={`/bugs/${bug.id}`} className="font-medium hover:underline">
-                    {bug.title}
-                  </Link>
-                  <p className="text-xs text-muted">
-                    {levelLabel[bug.level]}
-                    {lesson && ` · ${lesson.title}`}
-                  </p>
-                </div>
-                <Suspense fallback={null}>
-                  <Solved id={bug.id} />
-                </Suspense>
-              </Card>
-            </li>
-          );
-        })}
-      </ol>
+      {[...new Set(bugs.map((b) => b.moduleId))].map((moduleId) => {
+        const mod = getModuleById(moduleId);
+        const list = bugs.filter((b) => b.moduleId === moduleId);
+        return (
+          <section key={moduleId} className="space-y-3">
+            <h2 className="text-lg font-semibold">
+              Módulo {mod?.number} · {mod?.title} <span className="text-sm font-normal text-muted">({list.length})</span>
+            </h2>
+            <ol className="space-y-2">
+              {list.map((bug) => {
+                const lesson = lessons.find((l) => l.id === bug.lessonId);
+                return (
+                  <li key={bug.id}>
+                    <Card className="flex items-center justify-between gap-4 p-4">
+                      <div className="space-y-1">
+                        <Link href={`/bugs/${bug.id}`} className="font-medium hover:underline">
+                          {bug.title}
+                        </Link>
+                        <p className="text-xs text-muted">
+                          {levelLabel[bug.level]}
+                          {lesson && ` · ${lesson.title}`}
+                        </p>
+                      </div>
+                      <Suspense fallback={null}>
+                        <Solved id={bug.id} />
+                      </Suspense>
+                    </Card>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        );
+      })}
     </div>
   );
 }

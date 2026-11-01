@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { bugs, getBug, levelLabel } from "@/content/bugs";
+import { getModuleById } from "@/content/curriculum";
 import { lessons } from "@/content/lessons";
 import { ExerciseClient } from "@/components/lesson/exercise-client";
 
@@ -29,6 +30,7 @@ async function Bug({ params }: Pick<PageProps<"/bugs/[bug]">, "params">) {
   const prev = bugs[index - 1];
   const next = bugs[index + 1];
   const lesson = lessons.find((l) => l.id === bug.lessonId);
+  const mod = getModuleById(bug.moduleId);
 
   return (
     <article className="mx-auto max-w-4xl space-y-4">
@@ -77,14 +79,26 @@ async function Bug({ params }: Pick<PageProps<"/bugs/[bug]">, "params">) {
           </header>
         }
       />
-      {lesson && (
-        <p className="text-sm text-muted">
-          ¿Te falta la base? Lección:{" "}
-          <Link href={`/modulos/${lesson.id}`} className="text-primary hover:underline">
-            {lesson.title}
-          </Link>
-        </p>
-      )}
+      <p className="text-sm text-muted">
+        ¿Te falta la base?{" "}
+        {lesson ? (
+          <>
+            Lección:{" "}
+            <Link href={`/modulos/${lesson.id}`} className="text-primary hover:underline">
+              {lesson.title}
+            </Link>
+          </>
+        ) : (
+          mod && (
+            <>
+              Módulo:{" "}
+              <Link href={`/modulos/${mod.slug}`} className="text-primary hover:underline">
+                {mod.title}
+              </Link>
+            </>
+          )
+        )}
+      </p>
       <nav className="flex justify-between text-sm">
         {prev ? <Link href={`/bugs/${prev.id}`} className="hover:underline">← {prev.title}</Link> : <span />}
         {next ? <Link href={`/bugs/${next.id}`} className="hover:underline">{next.title} →</Link> : <span />}

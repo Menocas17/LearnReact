@@ -107,7 +107,8 @@ const lessonIds = new Set(lessons.map((l) => l.id));
 for (const bug of bugs) {
   if (exerciseIds.has(bug.id)) problems.push(`Bug con id repetido: ${bug.id}`);
   exerciseIds.add(bug.id);
-  if (!lessonIds.has(bug.lessonId)) problems.push(`Bug ${bug.id}: lección inexistente ${bug.lessonId}`);
+  if (!moduleIds.has(bug.moduleId)) problems.push(`Bug ${bug.id}: módulo inexistente ${bug.moduleId}`);
+  if (bug.lessonId && !lessonIds.has(bug.lessonId)) problems.push(`Bug ${bug.id}: lección inexistente ${bug.lessonId}`);
   for (const c of bug.concepts) if (!conceptIds.has(c)) problems.push(`Bug ${bug.id}: concepto inexistente ${c}`);
 }
 const allExercises = [...lessons.flatMap((l) => l.exercises), ...bugs];

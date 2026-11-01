@@ -16,6 +16,7 @@ export const bugsM02: readonly BugDef[] = [
     id: "bug-carrito-suma-texto",
     title: "#B01 · El botón + del carrito escribe 21",
     level: "principiante",
+    moduleId: "m02",
     lessonId: L.tipos,
     report: {
       reportedBy: "QA · Lucía",
@@ -72,6 +73,7 @@ export function decrementar(value) {
     id: "bug-badge-cero",
     title: "#B02 · Un 0 suelto en la bandeja de entrada",
     level: "principiante",
+    moduleId: "m02",
     lessonId: L.corto,
     report: {
       reportedBy: "Diseño · Marco",
@@ -117,6 +119,7 @@ test("sin dato tampoco", () => {
     id: "bug-timeout-cero",
     title: "#B03 · No puedo desactivar el timeout",
     level: "principiante",
+    moduleId: "m02",
     lessonId: L.corto,
     report: {
       reportedBy: "Backend · Sergio",
@@ -169,6 +172,7 @@ test("respeta los valores dados", () => {
     id: "bug-switch-query",
     title: "#B04 · ?vista=2 siempre abre la vista por defecto",
     level: "principiante",
+    moduleId: "m02",
     lessonId: L.corto,
     report: {
       reportedBy: "Soporte · Andrea",
@@ -231,6 +235,7 @@ test("sin parámetro o con uno desconocido abre la lista", () => {
     id: "bug-map-sin-return",
     title: "#B05 · La lista de tareas sale vacía tras el refactor",
     level: "intermedio",
+    moduleId: "m02",
     lessonId: L.funciones,
     report: {
       reportedBy: "QA · Lucía",
@@ -278,6 +283,7 @@ test("una lista vacía da una lista vacía", () => {
     id: "bug-total-decimales",
     title: "#B06 · El total del carrito no cuadra",
     level: "intermedio",
+    moduleId: "m02",
     lessonId: L.numeros,
     report: {
       reportedBy: "Finanzas · Patricia",
@@ -325,6 +331,7 @@ test("un carrito vacío vale 0", () => {
     id: "bug-emoji-limite",
     title: "#B07 · El límite de caracteres rechaza emojis",
     level: "intermedio",
+    moduleId: "m02",
     lessonId: L.numeros,
     report: {
       reportedBy: "Usuaria · vía soporte",
@@ -380,6 +387,7 @@ export function cabe(texto, limite) {
     id: "bug-localstorage-object",
     title: "#B08 · Las preferencias se guardan como [object Object]",
     level: "intermedio",
+    moduleId: "m02",
     lessonId: L.json,
     report: {
       reportedBy: "QA · Lucía",
@@ -452,6 +460,7 @@ export function cargarPrefs(storage) {
     id: "bug-json-fechas",
     title: "#B09 · createdAt.getTime is not a function",
     level: "intermedio",
+    moduleId: "m02",
     lessonId: L.json,
     report: {
       reportedBy: "Monitorización (Sentry)",
@@ -512,6 +521,7 @@ export function masReciente(pedidos) {
     id: "bug-sort-muta-props",
     title: "#B10 · Ordenar el catálogo cambia el panel de al lado",
     level: "avanzado",
+    moduleId: "m02",
     lessonId: L.metodos,
     report: {
       reportedBy: "QA · Marco",
@@ -574,6 +584,7 @@ export function recienLlegados(products) {
     id: "bug-orden-alfabetico",
     title: "#B11 · \"agua\" y \"Ñoquis\" salen después de \"Zumo\"",
     level: "avanzado",
+    moduleId: "m02",
     lessonId: L.metodos,
     report: {
       reportedBy: "Cliente · tienda de Sevilla",
@@ -629,6 +640,7 @@ export function ordenarNombres(nombres) {
     id: "bug-reduce-sin-inicial",
     title: "#B12 · El resumen de ventas muestra [object Object]",
     level: "avanzado",
+    moduleId: "m02",
     lessonId: L.metodos,
     report: {
       reportedBy: "Producto · Elena",
@@ -674,6 +686,7 @@ test("sin ventas devuelve 0", () => {
     id: "bug-classname-spread",
     title: "#B13 · El botón Guardar no ocupa todo el ancho",
     level: "avanzado",
+    moduleId: "m02",
     lessonId: L.spread,
     report: {
       reportedBy: "Diseño · Marco",
@@ -728,6 +741,7 @@ test("conserva el resto de props y no pasa variant al DOM", () => {
     id: "bug-default-null",
     title: "#B14 · Avatares de 0 px",
     level: "avanzado",
+    moduleId: "m02",
     lessonId: L.spread,
     report: {
       reportedBy: "QA · Lucía",
@@ -774,6 +788,7 @@ test("funciona sin argumentos", () => {
     id: "bug-copia-superficial",
     title: "#B15 · Cancelar no deshace el cambio de ciudad",
     level: "avanzado",
+    moduleId: "m02",
     lessonId: L.spread,
     report: {
       reportedBy: "Usuario · vía soporte",

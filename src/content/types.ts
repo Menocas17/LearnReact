@@ -156,6 +156,7 @@ export type BugReport = {
 export type BugDef = ExerciseDef & {
   level: BugLevel;
   report: BugReport;
-  /** Lección donde se explica la causa (enlace opcional). */
-  lessonId: string;
+  moduleId: string;
+  /** Lección donde se explica la causa (si el módulo ya tiene lecciones). */
+  lessonId?: string;
 };
