@@ -59,7 +59,7 @@ export async function runExerciseVariants(
     for (const v of variants) {
       const dir = path.join(root, v.key) + path.sep;
       const files = json.testResults.filter((r) => r.name.startsWith(dir));
-      const expected = Object.keys(v.tests).length;
+      const expected = Object.keys(v.tests).filter((k) => /\.test\.[jt]s$/.test(k)).length;
       const passed =
         files.length === expected &&
         files.every((r) => r.status === "passed" && r.assertionResults.length > 0);
