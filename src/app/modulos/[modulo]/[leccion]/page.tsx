@@ -5,7 +5,8 @@ import { getConcept, getModuleById, getModuleBySlug } from "@/content/curriculum
 import { getLesson, lessons, lessonsForModule } from "@/content/lessons";
 import { lessonContent } from "@/content/lessons/mdx";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { getCompletedLessons } from "@/lib/data/progress";
+import { getBookmark, getCompletedLessons } from "@/lib/data/progress";
+import { BookmarkControls } from "@/components/lesson/bookmark-controls";
 import { Card } from "@/components/ui/card";
 import { VideoList } from "@/components/lesson/video";
 import { CompleteLessonButton } from "./complete-button";
@@ -52,9 +53,12 @@ async function Lesson({ params }: Pick<PageProps<"/modulos/[modulo]/[leccion]">,
         </p>
       </header>
 
-      <div className="lesson-prose space-y-5 leading-relaxed">
+      <div data-lesson-content className="lesson-prose space-y-5 leading-relaxed">
         {renderContent()}
       </div>
+      <Suspense fallback={null}>
+        <LessonBookmark lessonId={lesson.id} />
+      </Suspense>
 
       {lesson.videos.length > 0 && (
         <section className="space-y-3">
@@ -128,5 +132,16 @@ function LessonNav({ moduleId, moduleSlug, lessonId }: { moduleId: string; modul
         </Link>
       )}
     </nav>
+  );
+}
+
+async function LessonBookmark({ lessonId }: { lessonId: string }) {
+  const user = await getCurrentUser();
+  const saved = await getBookmark(user.id);
+  return (
+    <BookmarkControls
+      lessonId={lessonId}
+      saved={saved?.lessonId === lessonId ? { block: saved.block, excerpt: saved.excerpt } : null}
+    />
   );
 }

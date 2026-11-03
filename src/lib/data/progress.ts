@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
+  bookmark,
   conceptStatus,
   diagnosticRun,
   exerciseResult,
@@ -77,4 +78,12 @@ export async function getLessonAttempts(userId: string, lessonId: string) {
     .from(questionAttempt)
     .where(and(eq(questionAttempt.userId, userId), eq(questionAttempt.lessonId, lessonId)))
     .orderBy(asc(questionAttempt.createdAt));
+}
+
+export type Bookmark = typeof bookmark.$inferSelect;
+
+export async function getBookmark(userId: string): Promise<Bookmark | undefined> {
+  const db = await getDb();
+  const [row] = await db.select().from(bookmark).where(eq(bookmark.userId, userId));
+  return row;
 }

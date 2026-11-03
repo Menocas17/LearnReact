@@ -72,3 +72,20 @@ body {
     color: var(--shiki-dark);
   }
 }
+
+/* Bloque marcado como "aquí lo dejé" en una lección. */
+[data-lesson-content] > * {
+  scroll-margin-top: 5rem;
+}
+[data-bookmark] {
+  position: relative;
+  box-shadow: -0.75rem 0 0 -0.5rem var(--primary);
+}
+[data-bookmark]::before {
+  content: "🔖 Aquí lo dejaste";
+  position: absolute;
+  top: -1.4rem;
+  left: 0;
+  font-size: 0.75rem;
+  color: var(--primary);
+}
