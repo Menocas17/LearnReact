@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { blocks, modules } from "@/content/curriculum";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { getConceptStatuses, getLastCompletedRun, getOpenRun } from "@/lib/data/progress";
+import { getBookmark, getConceptStatuses, getLastCompletedRun, getOpenRun } from "@/lib/data/progress";
+import { lessons } from "@/content/lessons";
 import { moduleCounts, recommendedModule } from "@/lib/progress/summary";
 import { Card } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
@@ -19,6 +20,10 @@ export default function HomePage() {
           tienes huecos, y la ruta se adapta a eso.
         </p>
       </section>
+
+      <Suspense fallback={null}>
+        <BookmarkCard />
+      </Suspense>
 
       <Suspense fallback={<Card>Cargando tu progreso…</Card>}>
         <NextStep />
@@ -110,6 +115,25 @@ async function NextStep() {
           Ver mapa completo
         </Link>
       </div>
+    </Card>
+  );
+}
+
+async function BookmarkCard() {
+  const user = await getCurrentUser();
+  const saved = await getBookmark(user.id);
+  if (!saved) return null;
+  const lesson = lessons.find((l) => l.id === saved.lessonId);
+  if (!lesson) return null;
+  return (
+    <Card className="flex flex-col gap-3 border-primary/40 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">🔖 Tu marcador · {lesson.title}</p>
+        <p className="line-clamp-2 text-sm text-muted">“{saved.excerpt}…”</p>
+      </div>
+      <Link href={`/modulos/${lesson.id}#marcador`} className={buttonClasses()}>
+        Ir a mi marcador
+      </Link>
     </Card>
   );
 }

@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -149,3 +150,16 @@ export const exerciseResult = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.exerciseId] })],
 );
+
+/** Marcador de lectura: un único punto por usuario, en una lección y un bloque concretos. */
+export const bookmark = pgTable("bookmark", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  lessonId: text("lesson_id").notNull(),
+  /** Posición del bloque (párrafo, título, código…) dentro del contenido de la lección. */
+  block: integer("block").notNull(),
+  /** Inicio del texto del bloque: sirve para encontrarlo aunque la lección cambie. */
+  excerpt: text("excerpt").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
